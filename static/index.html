@@ -1,0 +1,1045 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control de Ventas - Farmacia Interactiva</title>
+  <style>
+    :root {
+      --bg: #eef7ff;
+      /* Spinner colors adaptativos */
+      --spinner-track: rgba(255,255,255,0.35);
+      --spinner-arc: #ffffff;
+      --surface: #ffffff;
+      --surface-soft: #f5f9ff;
+      --primary: #1d4ed8;
+      --primary-soft: #dbeafe;
+      --secondary: #334155;
+      --muted: #64748b;
+      --border: #dbeafe;
+      --danger: #dc2626;
+      --danger-soft: #fef2f2;
+      --success: #15803d;
+      --success-soft: #dcfce7;
+      --radius: 20px;
+      --radius-sm: 14px;
+      --shadow: 0 24px 64px rgba(15, 23, 42, 0.08);
+      --focus: 0 0 0 4px rgba(59, 130, 246, 0.16);
+      --transition: 0.2s ease;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #f5f9ff 0%, var(--bg) 52%, #e2efff 100%);
+      color: #0f172a;
+      line-height: 1.65;
+    }
+
+    .page-wrapper {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 36px 24px 40px;
+    }
+
+    .header {
+      background: var(--surface);
+      border: 1px solid rgba(59, 130, 246, 0.14);
+      border-radius: var(--radius);
+      padding: 34px 32px;
+      box-shadow: var(--shadow);
+      margin-bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: clamp(2.4rem, 2.8vw, 3.5rem);
+      line-height: 1.02;
+      color: #0f172a;
+    }
+
+    .header p {
+      margin: 0;
+      color: var(--secondary);
+      font-size: 1.05rem;
+      max-width: 720px;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 20px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #f8fafc;
+      color: var(--secondary);
+      font-weight: 700;
+      font-size: 0.92rem;
+      text-decoration: none;
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .back-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(280px, 1.3fr) minmax(320px, 0.9fr);
+      gap: 32px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 30px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel h2 {
+      margin: 0 0 22px;
+      font-size: 1.4rem;
+      color: #0f172a;
+    }
+
+    .form-group {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.98rem;
+      font-weight: 600;
+      color: var(--secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      font-size: 1rem;
+      color: #0f172a;
+      background: var(--surface-soft);
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #ffffff;
+      box-shadow: var(--focus);
+    }
+
+    .form-group select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      font-size: 1rem;
+      color: #0f172a;
+      background: var(--surface-soft);
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #ffffff;
+      box-shadow: var(--focus);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .pago-info {
+      margin-top: 14px;
+      padding: 16px 18px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-soft);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+
+    .pago-info .pago-info-title {
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 6px;
+    }
+
+    .pago-info p {
+      margin: 0 0 10px;
+      color: var(--secondary);
+      font-size: 0.93rem;
+      line-height: 1.55;
+    }
+
+    .pago-info img {
+      display: block;
+      max-width: 180px;
+      margin: 4px auto 0;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    }
+
+    .qr-fallback {
+      display: none;
+      margin-top: 10px;
+      padding: 22px 14px;
+      border: 2px dashed rgba(148, 163, 184, 0.5);
+      border-radius: 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .pago-steps {
+      margin: 14px 0 0;
+      padding: 0 0 0 22px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .pago-steps li {
+      color: var(--secondary);
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+
+    .pago-steps li::marker {
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    .req {
+      color: var(--danger);
+    }
+
+    .buscador-group {
+      position: relative;
+      margin-bottom: 24px;
+    }
+
+    .codigo-barras-group {
+      position: relative;
+      margin-bottom: 12px;
+    }
+
+    #codigo-barras-input {
+      width: 100%;
+      border: 2px dashed var(--primary);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      font-size: 1.05rem;
+      letter-spacing: 1px;
+      background: #ffffff;
+      color: #0f172a;
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    #codigo-barras-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #ffffff;
+      box-shadow: var(--focus);
+    }
+
+    #buscador-medicamentos {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      font-size: 1rem;
+      background: var(--surface-soft);
+      color: #0f172a;
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    #buscador-medicamentos:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #ffffff;
+      box-shadow: var(--focus);
+    }
+
+    .monto-aviso {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .monto-ok { color: #15803d; }
+
+    .monto-error { color: #dc2626; }
+
+    /* Tipo comprobante selector */
+    .tipo-comprobante-aviso {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #b45309;
+      background: #fffbeb;
+      border: 1px solid rgba(180, 83, 9, 0.2);
+      border-radius: 10px;
+      padding: 8px 12px;
+      transition: opacity 200ms;
+    }
+
+    .tipo-comprobante-aviso.vacio {
+      background: transparent;
+      border: none;
+      padding: 0;
+      color: var(--muted);
+    }
+
+    .search-results {
+      position: absolute;
+      top: calc(100% + 12px);
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.1);
+      max-height: 340px;
+      overflow-y: auto;
+      z-index: 10;
+      padding: 10px 0;
+    }
+
+    .search-result-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      padding: 14px 20px;
+      cursor: pointer;
+      transition: background var(--transition), transform var(--transition);
+      border-radius: 16px;
+    }
+
+    .search-result-item:hover,
+    .search-result-item.highlighted,
+    .search-result-item[aria-selected="true"] {
+      background: rgba(59, 130, 246, 0.14);
+      transform: translateY(-1px);
+    }
+
+    .search-result-name {
+      color: #0f172a;
+      font-weight: 700;
+      font-size: 0.98rem;
+    }
+
+    .search-result-meta {
+      color: var(--secondary);
+      font-size: 0.92rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 90px;
+      text-align: right;
+    }
+
+    .receta-badge {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #9a3412;
+      background: #ffedd5;
+      border: 1px solid rgba(249, 115, 22, 0.35);
+      padding: 3px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .receta-na {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .receta-control {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .receta-checkbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--secondary);
+      cursor: pointer;
+    }
+
+    .receta-checkbox input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    .search-results.empty {
+      padding: 16px 20px;
+      color: var(--muted);
+    }
+
+    .search-results.hidden {
+      display: none;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      pointer-events: none;
+    }
+
+    .modal.hidden {
+      display: none;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(2px);
+    }
+
+    .modal-content {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 420px;
+      border-radius: 24px;
+      background: var(--surface);
+      padding: 28px 26px;
+      box-shadow: 0 28px 60px rgba(15, 23, 42, 0.18);
+      pointer-events: auto;
+    }
+
+    .modal-content h3 {
+      margin: 0 0 12px;
+      font-size: 1.2rem;
+      color: #0f172a;
+    }
+
+    .modal-content p {
+      margin: 0;
+      color: var(--secondary);
+      line-height: 1.6;
+      font-size: 0.98rem;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .secondary-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 50px;
+      padding: 14px 22px;
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: #f8fafc;
+      color: #334155;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background var(--transition), transform var(--transition);
+    }
+
+    .secondary-btn:hover {
+      background: #eef2ff;
+      transform: translateY(-1px);
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      overflow-y: auto;
+      max-height: 460px;
+      border-radius: 24px;
+      background: #f8fbff;
+      border: 1px solid rgba(59, 130, 246, 0.14);
+      box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.1);
+      padding: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 14px;
+      min-width: 640px;
+      background: transparent;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 18px 16px;
+      border: none;
+      vertical-align: middle;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      padding: 14px 16px;
+      font-size: 0.95rem;
+      color: #0f172a;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      background: #eef4ff;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+      box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.12);
+    }
+
+    tbody tr {
+      background: var(--surface);
+      border-radius: 20px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+
+    tbody tr:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    tbody td {
+      border-bottom: none;
+      padding: 20px 18px;
+      background: transparent;
+    }
+
+    tbody tr td:first-child {
+      padding-left: 22px;
+      border-top-left-radius: 20px;
+      border-bottom-left-radius: 20px;
+    }
+
+    tbody tr td:last-child {
+      padding-right: 22px;
+      border-top-right-radius: 20px;
+      border-bottom-right-radius: 20px;
+    }
+
+    tbody tr td:not(:last-child) {
+      border-right: 1px solid rgba(226, 232, 240, 0.8);
+    }
+
+    tbody tr td:last-child {
+      border-right: none;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .qty-controls {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .qty-input {
+      width: 64px;
+      min-width: 64px;
+      text-align: center;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      background: var(--surface-soft);
+      color: #0f172a;
+    }
+
+    .qty-controls button {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: #f8fafc;
+      color: #334155;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition), transform var(--transition);
+    }
+
+    .qty-controls button:hover {
+      background: rgba(59, 130, 246, 0.12);
+      border-color: rgba(59, 130, 246, 0.28);
+      transform: translateY(-1px);
+    }
+
+    .qty-controls button:focus {
+      outline: none;
+      box-shadow: var(--focus);
+    }
+
+    tbody td.quantity {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    tbody td.price,
+    tbody td.subtotal {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    th:nth-child(1) {
+      width: 24%;
+    }
+
+    th:nth-child(2) {
+      width: 14%;
+    }
+
+    th:nth-child(3) {
+      width: 17%;
+    }
+
+    th:nth-child(4),
+    th:nth-child(5) {
+      width: 16%;
+    }
+
+    .th-eliminar {
+      width: 11%;
+      min-width: 112px;
+      text-align: center;
+    }
+
+    .product-name {
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 1rem;
+    }
+
+    .quantity,
+    .price,
+    .subtotal {
+      color: #475569;
+      font-size: 0.98rem;
+      font-weight: 600;
+    }
+
+    .eliminar-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+
+    .remove-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      border-radius: 10px;
+      border: 1px solid rgba(220, 38, 38, 0.16);
+      background: rgba(254, 226, 226, 0.94);
+      color: var(--danger);
+      font-weight: 700;
+      font-size: 1.1rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background var(--transition), transform var(--transition);
+    }
+
+    .remove-btn:hover {
+      background: rgba(220, 38, 38, 0.18);
+      transform: translateY(-1px);
+    }
+
+    .primary-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 50px;
+      padding: 14px 22px;
+      border: none;
+      border-radius: 18px;
+      background: linear-gradient(135deg, var(--primary), #2563eb);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 16px 36px rgba(37, 99, 235, 0.18);
+      transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    .primary-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 40px rgba(37, 99, 235, 0.24);
+      background: linear-gradient(135deg, #2563eb, var(--primary));
+    }
+
+    .totals {
+      margin-top: 30px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 22px 26px;
+      background: var(--surface-soft);
+      border-radius: 18px;
+      border: 1px solid rgba(59, 130, 246, 0.16);
+      align-items: center;
+    }
+
+    .totals-row span:first-child {
+      color: var(--secondary);
+      font-size: 0.98rem;
+    }
+
+    .totals-row span:last-child {
+      color: #0f172a;
+      font-size: 1.12rem;
+      font-weight: 700;
+    }
+
+    .totals-row.total {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(255, 255, 255, 0.9));
+      border-color: rgba(59, 130, 246, 0.22);
+    }
+
+    .totals-row.total span:last-child {
+      font-size: 1.4rem;
+      color: var(--primary);
+    }
+
+    @media (max-width: 960px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .page-wrapper {
+        padding: 28px 20px 34px;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .page-wrapper {
+        padding: 24px 16px 28px;
+      }
+
+      .content-grid {
+        gap: 22px;
+      }
+
+      th,
+      td {
+        padding: 14px 12px;
+      }
+
+      .totals-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+    /* Spinner dentro del botón */
+    .btn-spinner {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      margin-right: 10px;
+      box-sizing: border-box;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .btn-spinner.hidden { display: none; }
+
+    /* SVG children use CSS variables for adaptive colors */
+    .btn-spinner .spinner-track { stroke: var(--spinner-track); }
+    .btn-spinner .spinner-arc { stroke: var(--spinner-arc); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Estado visual del botón mientras procesa: desaturado y menos destaque */
+    .primary-btn.processing {
+      filter: grayscale(60%) contrast(85%);
+      opacity: 0.9;
+      box-shadow: none;
+      cursor: progress;
+    }
+
+    /* Screen-reader-only helper */
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0,0,0,0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    /* Theme-aware spinner colors */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --spinner-track: rgba(255,255,255,0.12);
+        --spinner-arc: #e6f0ff;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Contenedor principal de la página que centra todo el contenido -->
+  <div class="page-wrapper">
+    <!-- Encabezado principal con título y descripción breve -->
+    <header class="header">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+        <div>
+          <h1>Control de Ventas - Farmacia Interactiva</h1>
+          <p>Registra al cliente, administra productos en el carrito y revisa los totales con claridad antes de finalizar la venta.</p>
+        </div>
+        <a href="/" class="back-btn">Volver al Menú Principal</a>
+      </div>
+    </header>
+
+    <!-- Área de contenido principal dividida entre formulario y carrito -->
+    <div class="content-grid">
+      <!-- Panel de formulario para ingresar los datos del cliente -->
+      <section class="panel" aria-labelledby="cliente-title">
+        <h2 id="cliente-title">Datos del Cliente</h2>
+        <form>
+          <!-- Grupo de formulario para DNI/RUC (opcional) -->
+          <div class="form-group">
+            <label for="cliente-documento">DNI / RUC <span style="color:var(--muted);font-weight:400;font-size:0.85rem;">(opcional)</span></label>
+            <div style="display:flex;gap:10px;align-items:stretch;">
+              <input type="text" id="cliente-documento" name="cliente-documento" placeholder="12345678 o 20612345678" style="flex:1;" />
+              <button type="button" id="buscar-cliente-btn" class="secondary-btn" style="min-height:50px;padding:12px 18px;white-space:nowrap;border-radius:var(--radius-sm);">Buscar</button>
+            </div>
+            <span id="tipo-comprobante" style="color: var(--muted); font-size: 0.88rem; margin-top: 4px; display: block;">Si el cliente proporciona DNI/RUC, se autocompleta su nombre.</span>
+          </div>
+
+          <!-- Grupo de formulario para nombre completo -->
+          <div class="form-group">
+            <label for="cliente-nombre">Nombre completo</label>
+            <input type="text" id="cliente-nombre" name="cliente-nombre" placeholder="Juan Pérez Rodríguez" />
+          </div>
+
+          <!-- Grupo de formulario para dirección -->
+          <div class="form-group">
+            <label for="cliente-direccion">Dirección</label>
+            <input type="text" id="cliente-direccion" name="cliente-direccion" placeholder="Dirección del cliente (opcional)" />
+          </div>
+          <!-- Tipo de documento fiscal (Nota de Venta / Boleta / Factura) -->
+          <div class="form-group">
+            <label for="tipo-comprobante-select">Tipo de Documento</label>
+            <select id="tipo-comprobante-select" name="tipo-comprobante-select">
+              <option value="NOTA_VENTA">Nota de Venta (interno)</option>
+              <option value="BOLETA">Boleta Electrónica</option>
+              <option value="FACTURA">Factura Electrónica</option>
+            </select>
+            <span id="tipo-comprobante-aviso" class="tipo-comprobante-aviso vacio" aria-live="polite">
+              Selecciona automáticamente según el total de la venta.
+            </span>
+          </div>
+
+          <!-- Método de pago -->
+          <div class="form-group">
+            <label for="medio-pago">Método de pago</label>
+            <select id="medio-pago" name="medio-pago">
+              <option value="">Seleccionar método de pago</option>
+              <option value="Efectivo">Efectivo</option>
+              <option value="Yape">Yape</option>
+              <option value="Plin">Plin</option>
+              <option value="Tarjeta">Tarjeta</option>
+            </select>
+
+            <!-- Panel dinámico: instrucciones según el método elegido -->
+            <div id="pago-yape" class="pago-info hidden">
+              <div class="pago-info-title">Pago con Yape</div>
+              <img src="qr_yape.png" alt="Código QR estático para pagar con Yape" id="qr-yape-img"
+                   onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+              <div class="qr-fallback">Imagen no encontrada: coloca tu QR en <b>qr_yape.png</b> junto a <b>index.html</b>.</div>
+              <ol class="pago-steps">
+                <li>Pídele al cliente que escanee el QR y verifique el monto exacto.</li>
+                <li>Confirma que el dinero haya ingresado a la aplicación del negocio en tu celular.</li>
+                <li>Digita obligatoriamente los 6 dígitos del número de operación de la transferencia.</li>
+              </ol>
+            </div>
+
+            <div id="pago-plin" class="pago-info hidden">
+              <div class="pago-info-title">Pago con Plin</div>
+              <img src="qr_plin.png" alt="Código QR estático para pagar con Plin" id="qr-plin-img"
+                   onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+              <div class="qr-fallback">Imagen no encontrada: coloca tu QR en <b>qr_plin.png</b> junto a <b>index.html</b>.</div>
+              <ol class="pago-steps">
+                <li>Pídele al cliente que escanee el QR y verifique el monto exacto.</li>
+                <li>Confirma que el dinero haya ingresado a la aplicación del negocio en tu celular.</li>
+                <li>Digita obligatoriamente los 6 dígitos del número de operación de la transferencia.</li>
+              </ol>
+            </div>
+
+            <div id="pago-tarjeta" class="pago-info hidden">
+              <div class="pago-info-title">Pago con Tarjeta</div>
+              <p>Pase la tarjeta por el POS físico para realizar el cobro.</p>
+            </div>
+          </div>
+
+          <!-- Monto recibido: solo para efectivo (para calcular el vuelto) -->
+          <div class="form-group hidden" id="grupo-monto-pagado">
+            <label for="monto-pagado">Monto recibido (S/)</label>
+            <input type="number" id="monto-pagado" name="monto-pagado" min="0" step="0.01" placeholder="Total a pagar" />
+            <span id="monto-aviso" class="monto-aviso" aria-live="polite"></span>
+          </div>
+
+          <!-- Número de operación: obligatorio para Yape, Plin y Tarjeta -->
+          <div class="form-group hidden" id="grupo-numero-operacion">
+            <label for="numero-operacion">Número de Operación <span class="req">*</span></label>
+            <input type="text" id="numero-operacion" name="numero-operacion" placeholder="Código de Yape o voucher del POS" />
+          </div>
+
+          <!-- Canal de entrega: físico (tiquetera) o digital (WhatsApp) -->
+          <div class="form-group">
+            <label for="tipo-envio-comprobante">Canal de Entrega</label>
+            <select id="tipo-envio-comprobante" name="tipo-envio-comprobante">
+              <option value="FISICO">Físico (Impreso en tiquetera)</option>
+              <option value="DIGITAL">Digital (WhatsApp)</option>
+            </select>
+          </div>
+
+          <!-- Datos de contacto: solo si el comprobante es digital -->
+          <div class="form-group hidden" id="grupo-contacto-digital">
+            <label for="telefono-cliente">WhatsApp del cliente <span style="color:var(--danger);font-weight:700;">*</span></label>
+            <input type="tel" id="telefono-cliente" name="telefono-cliente" placeholder="Ej: 999123456" />
+            <label for="correo-cliente" style="margin-top:10px;">Correo electrónico <span style="color:var(--muted);font-weight:400;font-size:0.85rem;">(opcional)</span></label>
+            <input type="email" id="correo-cliente" name="correo-cliente" placeholder="cliente@correo.com" style="margin-top:4px;" />
+          </div>
+        </form>
+      </section>
+
+      <!-- Panel del carrito de compras con tabla de productos -->
+      <section class="panel" aria-labelledby="carrito-title">
+        <h2 id="carrito-title">Carrito de Compras</h2>
+        <div class="form-group codigo-barras-group">
+          <label for="codigo-barras-input">Código de barras (pistola lectora)</label>
+          <input type="text" id="codigo-barras-input" name="codigo-barras-input" placeholder="Escanea o escribe el código y presiona Enter..." autocomplete="off" inputmode="numeric" />
+        </div>
+        <div class="form-group buscador-group">
+          <label for="buscador-medicamentos">Buscar medicamento</label>
+          <input type="text" id="buscador-medicamentos" name="buscador-medicamentos" placeholder="Buscar por nombre o componente..." autocomplete="off" />
+          <div id="resultados-busqueda" class="search-results hidden" role="listbox" aria-label="Resultados de búsqueda"></div>
+        </div>
+        <!-- Tabla visual del carrito con columnas para cada campo importante -->
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Cantidad</th>
+                <th>Receta</th>
+                <th id="th-precio">Precio</th>
+                <th>Subtotal</th>
+                <th class="th-eliminar">Eliminar</th>
+              </tr>
+            </thead>
+            <tbody id="carrito-body">
+              <tr>
+                <td colspan="6" style="padding: 20px 16px; text-align: center; color: var(--muted);">El carrito está vacío. Agrega un medicamento para comenzar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sección de totales con el desglose de valores -->
+        <div class="totals">
+          <div class="totals-row">
+            <span>Op. Gravada</span>
+            <span id="op-gravada">S/ 0.00</span>
+          </div>
+          <div class="totals-row">
+            <span>IGV (18%)</span>
+            <span id="igv">S/ 0.00</span>
+          </div>
+          <div class="totals-row total">
+            <span>Total a Pagar</span>
+            <span id="total-pagar">S/ 0.00</span>
+          </div>
+        </div>
+        <div style="margin-top:18px; display:flex; justify-content:flex-end;">
+          <button id="procesar-venta-btn" class="primary-btn" aria-live="polite" aria-busy="false">
+            <!-- SVG spinner accesible: título para lectores de pantalla, pero aria-hidden en la representación visual -->
+            <svg class="btn-spinner hidden" role="img" aria-hidden="true" viewBox="0 0 50 50" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+              <title>Cargando</title>
+              <circle class="spinner-track" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+              <path class="spinner-arc" d="M45 25a20 20 0 0 1-20 20" fill="none" stroke-width="5" stroke-linecap="round"></path>
+            </svg>
+            <span class="btn-text">Procesar Venta</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <!-- Toast container -->
+  <div id="toast-container" style="position:fixed;right:16px;top:16px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none;"></div>
+
+  <div id="receta-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="receta-modal-title">
+      <h3 id="receta-modal-title">¿El cliente cuenta con receta médica?</h3>
+      <p>Hay productos en el carrito que requieren receta. Confirma si el cliente la tiene para poder procesar la venta.</p>
+      <div class="modal-actions">
+        <button id="receta-modal-no" class="secondary-btn" type="button">No</button>
+        <button id="receta-modal-si" class="primary-btn" type="button">Sí</button>
+      </div>
+    </div>
+  </div>
+  <!-- Regiones aria-live: una para anuncios generales y otra assertive para errores críticos -->
+  <div id="aria-live-region" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="aria-live-assertive" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

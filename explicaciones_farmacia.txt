@@ -1,0 +1,63 @@
+EXPLICACIONES DE LA PRACTICA DE FARMACIA
+=======================================
+
+1. Función conectar_bd()
+- Se conecta a MySQL con los datos del servidor local.
+- Usa host, puerto, usuario, password y base de datos.
+- Si falla, imprime un mensaje de error y devuelve None.
+
+2. Función generar_archivo_comprobante()
+- Recibe los datos de una venta.
+- Crea una carpeta llamada comprobantes si no existe.
+- Genera un archivo .txt con el nombre tipo_serie_correlativo.txt.
+- Calcula subtotal e IGV.
+- Escribe el contenido del comprobante en el archivo.
+
+3. Función guardar_medicamento_bd(medicamento)
+- Conecta a la base de datos.
+- Inserta un medicamento en la tabla medicamentos.
+- Si el medicamento ya existe, actualiza datos como stock, precio, receta y ventas_totales.
+- Usa INSERT ... ON DUPLICATE KEY UPDATE.
+- Hace commit para guardar cambios.
+
+4. Función descontinuar_medicamento_bd(nombre_medicamento)
+- Actualiza la tabla medicamentos.
+- Cambia activo = 0 para marcar el medicamento como inactivo.
+- Es un borrado lógico, no elimina la fila físicamente.
+
+5. Función registrar_venta_bd(...)
+- Conecta a la base de datos.
+- Inicia una transacción.
+- Inserta o actualiza al cliente en la tabla clientes.
+- Calcula subtotal e IGV del comprobante.
+- Obtiene el siguiente correlativo por serie.
+- Inserta el comprobante en la tabla comprobantes.
+- Busca el ID del medicamento por nombre.
+- Inserta el detalle de la venta en detalle_comprobantes.
+- Actualiza stock y ventas_totales del medicamento.
+- Hace commit si todo sale bien.
+- En caso de error hace rollback.
+
+6. Función cargar_medicamentos_bd()
+- Cuenta cuántas filas hay en medicamentos con SELECT COUNT(*).
+- Hace un SELECT de los medicamentos activos con WHERE activo = 1.
+- Usa fetchall() para obtener todas las filas encontradas.
+- Recorre cada fila con un for y las convierte en objetos Medicamento.
+
+7. Qué significa WHERE activo = 1
+- Filtra solo los registros activos.
+- Solo trae los medicamentos que están disponibles.
+
+8. Qué significa cursor.fetchone() y cursor.fetchall()
+- fetchone(): obtiene la primera fila del resultado.
+- fetchall(): obtiene todas las filas del resultado.
+
+9. Qué significa %s
+- Es un marcador de posición para pasar valores de forma segura en SQL.
+- Evita problemas con datos y hace el código más seguro.
+
+10. Resumen general del proyecto
+- El programa conecta Python con MySQL.
+- Guarda medicamentos, ventas y comprobantes.
+- Actualiza stock y ventas según las ventas realizadas.
+- Genera archivos de texto con los comprobantes.

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema de Farmacia Interactiva - Menú Principal</title>
+  <style>
+    :root {
+      --bg: #eef7ff;
+      --surface: #ffffff;
+      --surface-soft: #f5f9ff;
+      --primary: #1d4ed8;
+      --primary-soft: #dbeafe;
+      --secondary: #334155;
+      --muted: #64748b;
+      --border: #dbeafe;
+      --danger: #dc2626;
+      --success: #15803d;
+      --radius: 24px;
+      --shadow: 0 24px 64px rgba(15, 23, 42, 0.08);
+      --transition: 0.2s ease;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #f5f9ff 0%, var(--bg) 52%, #e2efff 100%);
+      color: #0f172a;
+      line-height: 1.6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .menu-card {
+      width: 100%;
+      max-width: 560px;
+      background: var(--surface);
+      border: 1px solid rgba(59, 130, 246, 0.14);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 44px 40px;
+      text-align: center;
+    }
+
+    .menu-card h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.6rem, 3vw, 2.1rem);
+      line-height: 1.15;
+      color: #0f172a;
+      letter-spacing: 0.02em;
+    }
+
+    .menu-card .welcome {
+      margin: 0 0 30px;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    .welcome strong { color: var(--primary); }
+
+    .menu-options {
+      display: grid;
+      gap: 14px;
+    }
+
+    .option-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      width: 100%;
+      text-align: left;
+      padding: 20px 22px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: #0f172a;
+      font: inherit;
+      cursor: pointer;
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .option-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.09);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+
+    .option-btn .option-text { display: flex; flex-direction: column; gap: 4px; }
+
+    .option-btn .option-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: #0f172a;
+    }
+
+    .option-btn .option-desc {
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    .option-btn .option-arrow {
+      font-size: 1.4rem;
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    .option-btn.danger { border-color: rgba(220, 38, 38, 0.2); }
+    .option-btn.danger .option-arrow { color: var(--danger); }
+    .option-btn.danger:hover { border-color: rgba(220, 38, 38, 0.45); }
+
+    .footer-note {
+      margin: 26px 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main class="menu-card">
+    <h1>SISTEMA DE FARMACIA INTERACTIVA</h1>
+    <p class="welcome">Bienvenido, <strong>{{ usuario }}</strong>. Selecciona una opción para continuar.</p>
+
+    <div class="menu-options">
+      <button type="button" class="option-btn" onclick="window.location.href='/caja'">
+        <span class="option-text">
+          <span class="option-title">Entrar a Caja / Ventas</span>
+          <span class="option-desc">Flujo del cajero o farmacéutico para registrar ventas.</span>
+        </span>
+        <span class="option-arrow">&rsaquo;</span>
+      </button>
+
+      <button type="button" class="option-btn" onclick="window.location.href='/admin'">
+        <span class="option-text">
+          <span class="option-title">Entrar a Panel de Administrador</span>
+          <span class="option-desc">Gestión de inventario, agregar medicamentos, etc.</span>
+        </span>
+        <span class="option-arrow">&rsaquo;</span>
+      </button>
+
+      <button type="button" class="option-btn danger" onclick="window.location.href='/logout'">
+        <span class="option-text">
+          <span class="option-title">Cerrar Sesión / Salir</span>
+          <span class="option-desc">Volver a la pantalla de inicio de sesión.</span>
+        </span>
+        <span class="option-arrow">&rsaquo;</span>
+      </button>
+    </div>
+
+    <p class="footer-note">Farmacia Interactiva &copy; 2026</p>
+  </main>
+</body>
+</html>

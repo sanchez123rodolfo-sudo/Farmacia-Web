@@ -1,0 +1,144 @@
+Voy a agregar la capa backend en app.py. Primero las importaciones:
+← Edit app.py
+buscar_cliente_bd,
+registrar_venta_carrito_bd,
+listar_medicamentos_bd,
+registrar_medicamento_bd,
+listar_presentaciones_bd,
+registrar_presentacion_bd,
+editar_presentacion_bd,
+desactivar_presentacion_bd,
+reabastecer_stock_bd,
+descontinuar_medicamento_por_id_bd,
+reporte_ganancias_bd,
+reporte_ganancias_filtrado_bd,
++ Thought: 869ms
+Ahora los tres endpoints, agrupados con las demás rutas de inventario (después de /admin/descontinuar):
+← Edit app.py
+        return jsonify({"success": False, "error": msg}), 400
+    return jsonify({"success": True, "medicamento_id": medicamento_id}), 200
+
+
+@app.route("/admin/presentaciones/registrar", methods=["POST"])
+def admin_presentacion_registrar():
+    """Crea una nueva presentación de venta para un medicamento.
+    Body: {medicamento_id, nombre, factor_conversion, precio}."""
+    if not session.get("usuario"):
+        return jsonify({"success": False, "error": "No autorizado"}), 401
+
+    data = request.get_json(silent=True) or request.form
+
+    try:
+        medicamento_id = int(data.get("medicamento_id") or 0)
+    except Exception:
+        return jsonify({"success": False, "error": "medicamento_id debe ser numérico."}), 400
+    if medicamento_id <= 0:
+        return jsonify({"success": False, "error": "Medicamento inválido."}), 400
+
+    nombre = (data.get("nombre") or "").strip()
+    if not nombre:
+        return jsonify({"success": False, "error": "El nombre de la presentación es obligatorio."}), 400
+
+    # Validación de tipos; los rangos (factor>=1, precio>0) los valida la capa BD.
+    try:
+        factor = float(data.get("factor_conversion") or 0)
+        precio = float(data.get("precio") or 0)
+    except Exception:
+        return jsonify({"success": False, "error": "factor_conversion y precio deben ser numéricos."}), 400
+
+    ok, resultado = registrar_presentacion_bd(medicamento_id, nombre, factor, precio)
+    if not ok:
+        return jsonify({"success": False, "error": resultado}), 400
+    return jsonify({"success": True, "id": resultado, "nombre": nombre}), 201
+
+
+@app.route("/admin/presentaciones/editar", methods=["POST"])
+def admin_presentacion_editar():
+    """Actualiza factor y/o precio de una presentación existente.
+    Solo se modifican los campos enviados; el resto queda intacto.
+    Body: {presentacion_id, factor_conversion?, precio?}."""
+    if not session.get("usuario"):
+        return jsonify({"success": False, "error": "No autorizado"}), 401
+
+    data = request.get_json(silent=True) or request.form
+
+    try:
+        presentacion_id = int(data.get("presentacion_id") or 0)
+    except Exception:
+        return jsonify({"success": False, "error": "presentacion_id debe ser numérico."}), 400
+    if presentacion_id <= 0:
+        return jsonify({"success": False, "error": "Presentación inválida."}), 400
+
+    factor_valor = None
+    precio_valor = None
+    if data.get("factor_conversion") not in (None, ""):
+        try:
+            factor_valor = float(data.get("factor_conversion"))
+        except Exception:
+            return jsonify({"success": False, "error": "factor_conversion debe ser numérico."}), 400
+    if data.get("precio") not in (None, ""):
+        try:
+            precio_valor = float(data.get("precio"))
+        except Exception:
+            return jsonify({"success": False, "error": "precio debe ser numérico."}), 400
+
+    if factor_valor is None and precio_valor is None:
+        return jsonify({"success": False, "error": "Envía al menos 'factor_conversion' o 'precio' para actualizar."}), 400
+
+    ok, mensaje = editar_presentacion_bd(presentacion_id, factor_valor, precio_valor)
+    if not ok:
+        return jsonify({"success": False, "error": mensaje}), 400
+    return jsonify({"success": True, "mensaje": mensaje}), 200
+
+
+@app.route("/admin/presentaciones/desactivar", methods=["POST"])
+def admin_presentacion_desactivar():
+    """Desactiva una presentación (borrado lógico: activo=0).
+    Las ventas históricas no se afectan (guardan copia de nombre y factor).
+    Body: {presentacion_id}."""
+    if not session.get("usuario"):
+        return jsonify({"success": False, "error": "No autorizado"}), 401
+
+    data = request.get_json(silent=True) or request.form
+
+    try:
+        presentacion_id = int(data.get("presentacion_id") or 0)
+    except Exception:
+        return jsonify({"success": False, "error": "presentacion_id debe ser numérico."}), 400
+    if presentacion_id <= 0:
+        return jsonify({"success": False, "error": "Presentación inválida."}), 400
+
+    ok, mensaje = desactivar_presentacion_bd(presentacion_id)
+    if not ok:
+        return jsonify({"success": False, "error": mensaje}), 400
+    return jsonify({"success": True, "mensaje": mensaje}), 200
+
+
+@app.route("/admin/reporte", methods=["GET"])
+def admin_reporte():
+    """Reporte de ganancias acumuladas, con filtros opcionales por mes y año.
+    Parámetros de query:
+$ python -m py_compile app.py; if ($?) { python -c "import ast; tree = ast.parse(open('app.py', encoding='utf-8').read()); routes = []; [routes.append((n.name, d.route)) for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) for d in n.decorator_list if hasattr(d, 'args') and d.args]; print('\n'.join(f'{a} -> /{b}' if isinstance(b, str) else f'{a} -> /{b[0]}' for a,b in routes if 'presentacion' in a))" }
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import ast; tree = ast.parse(open('app.py', encoding='utf-8').read()); routes = []; [routes.append((n.name, d.route)) for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) for d in n.decorator_list if hasattr(d, 'args') and d.args]; print('\n'.join(f'{a} -> /{b}' if isinstance(b, str) else f'{a} -> /{b[0]}' for a,b in routes if 'presentacion' in a))
+                                                                                                                ^^^^^^^
+AttributeError: 'Call' object has no attribute 'route'
++ Thought: 1.6s
+La sintaxis compila bien; mi script de inspección falló por cómo leo los decoradores. Lo corrijo para verificar las rutas registradas:
+$ python -c "import ast; tree = ast.parse(open('app.py', encoding='utf-8').read()); [print(n.name, '->', d.args[0].value) for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) for d in n.decorator_list if isinstance(d, ast.Call) and d.args and isinstance(d.args[0], ast.Constant)]" | Select-String presentacion
+admin_presentacion_registrar -> /admin/presentaciones/registrar
+admin_presentacion_editar -> /admin/presentaciones/editar
+admin_presentacion_desactivar -> /admin/presentaciones/desactivar
++ Thought: 1.4s
+✅ Capa backend completa — sintaxis OK y las 3 rutas registradas en app.py:
+Ruta	Método	Body	Respuesta
+/admin/presentaciones/registrar	POST	{medicamento_id, nombre, factor_conversion, precio}	201 con el nuevo id
+/admin/presentaciones/editar	POST	{presentacion_id, factor_conversion?, precio?}	200 (campos omitidos quedan intactos)
+/admin/presentaciones/desactivar	POST	{presentacion_id}	200 borrado lógico
+Seguridad aplicada (mismo patrón que tus otros endpoints admin):
+- 🔐 Todas exigen sesión activa → 401 No autorizado
+- 🧾 Validación de tipos antes de tocar la BD (400 si no son numéricos)
+- 🛡️ Los rangos (factor ≥ 1, precio > 0) y duplicados los valida la capa BD y se devuelven como error amistoso en 400
+- 📋 Aceptan tanto JSON como form-data (get_json(silent=True) or request.form)
+¿Seguimos con la capa frontend (el modal visual en admin.html con MEDICAMENTOS_DATA)?

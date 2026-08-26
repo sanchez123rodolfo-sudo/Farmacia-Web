@@ -1,0 +1,12 @@
+PENDIENTES PARA MAÑANA
+======================
+
+- Implementar ventas con carrito de compra.
+- Permitir que una venta tenga varios medicamentos diferentes.
+- Generar un solo comprobante de pago por compra.
+- Guardar la venta completa en MySQL con:
+  - un registro en comprobantes,
+  - varios registros en detalle_comprobantes,
+  - y actualización del stock de cada medicamento.
+- Generar un único archivo de comprobante en texto.
+- Practicar la lógica paso a paso para la evaluación.

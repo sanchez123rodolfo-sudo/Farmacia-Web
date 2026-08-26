@@ -1,0 +1,1901 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel de Administrador - Sistema de Farmacia Interactiva</title>
+  <style>
+    :root {
+      --bg: #eef7ff;
+      --surface: #ffffff;
+      --surface-soft: #f5f9ff;
+      --primary: #1d4ed8;
+      --primary-soft: #dbeafe;
+      --secondary: #334155;
+      --muted: #64748b;
+      --border: #dbeafe;
+      --danger: #dc2626;
+      --success: #15803d;
+      --warning: #b45309;
+      --radius: 20px;
+      --radius-sm: 14px;
+      --shadow: 0 24px 64px rgba(15, 23, 42, 0.08);
+      --transition: 0.2s ease;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #f5f9ff 0%, var(--bg) 52%, #e2efff 100%);
+      color: #0f172a;
+      line-height: 1.6;
+    }
+
+    .page-wrapper { max-width: 1100px; margin: 0 auto; padding: 32px 24px 48px; }
+
+    .header {
+      background: var(--surface);
+      border: 1px solid rgba(59, 130, 246, 0.14);
+      border-radius: var(--radius);
+      padding: 26px 30px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+
+    .header h1 { margin: 0 0 6px; font-size: 1.7rem; color: #0f172a; }
+    .header p { margin: 0 0 14px; color: var(--muted); }
+    .header p strong { color: var(--primary); }
+    .header-links a { color: var(--primary); font-weight: 600; text-decoration: none; margin-right: 16px; }
+    .header-links a:hover { text-decoration: underline; }
+
+    /* ── Sistema de pestañas (tablas principales) ── */
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+
+    .tab-btn {
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--secondary);
+      font-family: inherit;
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 10px 18px;
+      border-radius: 999px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--transition), color var(--transition), box-shadow var(--transition), transform var(--transition);
+    }
+
+    .tab-btn:hover { background: var(--primary-soft); color: var(--primary); }
+
+    .tab-btn.active {
+      background: linear-gradient(135deg, var(--primary), #2563eb);
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .tab-btn:focus-visible { outline: 3px solid rgba(59, 130, 246, 0.4); outline-offset: 2px; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: tabFadeIn 0.25s ease; }
+
+    @keyframes tabFadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 26px 28px;
+      box-shadow: var(--shadow);
+      margin-bottom: 28px;
+    }
+
+    .panel h2 { margin: 0 0 18px; font-size: 1.25rem; color: #0f172a; }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .panel-head h2 { margin: 0; }
+
+    .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 16px; }
+
+    /* ── Tablas: scroll horizontal sin romper el layout ── */
+    .table-wrapper { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); -webkit-overflow-scrolling: touch; }
+
+    table { width: 100%; border-collapse: collapse; min-width: 1200px; }
+    table.tabla-media { min-width: 980px; }
+    table.tabla-historial { min-width: 1080px; }
+
+    /* Contenedor con altura máxima y scroll vertical interno.
+       Aplica a TODAS las tablas del panel: si la lista crece, la tabla
+       crece hasta 450px y de ahí aparece el scrollbar vertical (la
+       página no se estira). El scroll horizontal lo aporta el
+       .table-wrapper base. */
+    .table-container-scroll {
+      max-height: 450px;
+      overflow-y: auto;
+      display: block;
+    }
+
+    /* Cabecera fija: mientras las filas hacen scroll, el thead queda
+       pegado arriba del contenedor. Se usa box-shadow (y no border)
+       porque con border-collapse la línea inferior del borde se mueve
+       junto con las filas y desaparece visualmente. */
+    .table-container-scroll thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.25);
+    }
+
+    th, td { text-align: left; padding: 14px 16px; font-size: 0.95rem; }
+
+    thead th {
+      background: #eef4ff;
+      color: #0f172a;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+      white-space: nowrap;
+    }
+
+    tbody tr { border-bottom: 1px solid rgba(226, 232, 240, 0.6); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody td { color: var(--secondary); vertical-align: top; }
+
+    .stock-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      background: var(--success);
+      color: #fff;
+    }
+
+    .stock-badge.low { background: var(--danger); }
+
+    /* ── Presentaciones: badges en la tabla + botón gestionar ── */
+    .pres-badge {
+      display: inline-block;
+      padding: 2px 9px;
+      margin: 1px 2px 1px 0;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: var(--primary);
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    .pres-vacio {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      background: var(--surface-soft);
+      border: 1px dashed var(--border);
+      color: var(--muted);
+    }
+
+    .btn-gestionar-pres {
+      display: block;
+      margin-top: 4px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: var(--secondary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-gestionar-pres:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    /* Filas dentro del modal de presentaciones */
+    .pres-fila {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .pres-fila:last-child { border-bottom: none; }
+
+    .pres-nombre { min-width: 130px; font-weight: 700; color: #0f172a; }
+    .pres-factor { font-size: 0.82rem; color: var(--muted); }
+
+    .pres-input {
+      width: 90px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.88rem;
+    }
+
+    .btn-pres-guardar {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-pres-desactivar {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fafc;
+      color: var(--danger);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-pres-desactivar:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+    .vencimiento-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.82rem;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .vencimiento-badge.ok { background: var(--success); }
+    .vencimiento-badge.warn { background: #d97706; }
+    .vencimiento-badge.danger { background: var(--danger); }
+    .vencimiento-badge.sin-fecha { background: var(--muted); }
+
+    /* Badge de tipo de comprobante (Historial / Comprobantes) */
+    .tipo-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+    .tipo-factura { background: var(--primary-soft); color: var(--primary); }
+    .tipo-boleta { background: #dcfce7; color: var(--success); }
+    .tipo-nota_venta { background: #ede9fe; color: #6d28d9; }
+
+    /* Botón "Ver Detalle" dentro de las tablas */
+    .btn-ver-detalle {
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      border-radius: 10px;
+      background: var(--surface-soft);
+      color: var(--primary);
+      font-family: inherit;
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding: 7px 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+    }
+    .btn-ver-detalle:hover {
+      background: var(--primary-soft);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.18);
+    }
+
+    /* ── Modal de detalle (ventana emergente flotante) ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;                          /* cubre toda la ventana */
+      background: rgba(15, 23, 42, 0.62); /* fondo oscuro semitransparente */
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 1000;                     /* flota sobre todo lo demás */
+    }
+
+    /* El atributo hidden pierde efecto si solo usamos display:flex,
+       así que lo reforzamos explícitamente */
+    .modal-overlay[hidden] { display: none; }
+
+    .modal-caja {
+      background: var(--surface);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 640px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 32px 80px rgba(15, 23, 42, 0.35);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(16px) scale(0.98); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    .modal-cabecera {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-cabecera h3 { margin: 0; font-size: 1.15rem; color: #0f172a; }
+
+    .modal-cerrar {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 1.6rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 4px 10px;
+      border-radius: 8px;
+      transition: background var(--transition), color var(--transition);
+    }
+    .modal-cerrar:hover { background: #fee2e2; color: var(--danger); }
+
+    .modal-resumen {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      align-items: center;
+      padding: 14px 22px;
+      background: var(--surface-soft);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      color: var(--secondary);
+    }
+
+    .modal-resumen strong { color: #0f172a; }
+
+    .modal-cuerpo { padding: 6px 22px 0; }
+
+    /* Tabla interna del modal: anula el min-width global porque
+       aquí el espacio es más reducido */
+    table.tabla-modal { min-width: 0; }
+    .tabla-modal th, .tabla-modal td { padding: 10px 12px; font-size: 0.9rem; }
+
+    .modal-pie {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 16px 22px 20px;
+    }
+
+    .modal-total { font-size: 1.05rem; color: var(--secondary); }
+    .modal-total strong { font-size: 1.25rem; color: var(--primary); }
+
+    /* ── Alertas del inventario (formato original de avisos) ── */
+    .alertas-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .alerta-card {
+      border-radius: var(--radius-sm);
+      padding: 20px 22px;
+      border: 1px solid;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .alerta-card.stock-bajo {
+      background: #fef2f2;
+      border-color: rgba(220, 38, 38, 0.3);
+    }
+
+    .alerta-card.por-vencer {
+      background: #fffbeb;
+      border-color: rgba(234, 179, 8, 0.35);
+    }
+
+    .alerta-card h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .alerta-card.stock-bajo h3 { color: var(--danger); }
+    .alerta-card.por-vencer h3 { color: #b45309; }
+
+    .alerta-lista {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .alerta-lista li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.92rem;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.7);
+    }
+
+    .alerta-lista li .alerta-nombre { font-weight: 600; color: #0f172a; }
+    .alerta-lista li .alerta-valor { font-weight: 700; font-size: 0.88rem; }
+
+    .alerta-card.stock-bajo .alerta-valor { color: var(--danger); }
+    .alerta-card.por-vencer .alerta-valor { color: #b45309; }
+
+    .alerta-empty { color: var(--muted); font-size: 0.92rem; margin: 0; }
+
+    .restock-form { display: flex; gap: 8px; align-items: center; }
+    .restock-form input {
+      width: 72px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+      background: var(--surface-soft);
+    }
+    .restock-form button, .primary-btn {
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--primary), #2563eb);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 10px 18px;
+      cursor: pointer;
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+    .restock-form button:hover, .primary-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(37, 99, 235, 0.2); }
+    .restock-form button:disabled, .primary-btn:disabled { opacity: 0.6; cursor: progress; }
+
+    .empty { color: var(--muted); padding: 10px 0; margin: 0; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .form-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; font-weight: 600; color: var(--secondary); }
+    .form-grid label.checkbox { flex-direction: row; align-items: center; font-weight: 500; }
+    .form-grid input[type="text"], .form-grid input[type="number"] {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 0.98rem;
+      color: #0f172a;
+      background: var(--surface-soft);
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .form-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16); }
+    .form-grid input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
+
+    .form-msg { margin-top: 14px; font-size: 0.95rem; font-weight: 600; }
+    .form-msg.ok { color: var(--success); }
+    .form-msg.error { color: var(--danger); }
+
+    .header-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 20px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #f8fafc;
+      color: var(--secondary);
+      font-weight: 700;
+      font-size: 0.92rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .btn-back:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+
+    .stat-card {
+      padding: 20px 22px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(59, 130, 246, 0.16);
+      background: var(--surface-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stat-card .stat-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .stat-card .stat-value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--primary);
+    }
+
+    .row-actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+
+    .discontinue-btn {
+      border: 1px solid rgba(220, 38, 38, 0.35);
+      border-radius: 10px;
+      background: #fef2f2;
+      color: var(--danger);
+      font-weight: 700;
+      font-size: 0.88rem;
+      padding: 9px 14px;
+      cursor: pointer;
+      transition: transform var(--transition), background var(--transition);
+    }
+
+    .discontinue-btn:hover {
+      background: rgba(220, 38, 38, 0.14);
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 640px) {
+      .page-wrapper { padding: 20px 12px 36px; }
+      .header { padding: 20px; }
+      .panel { padding: 18px 16px; }
+      th, td { padding: 10px 12px; font-size: 0.88rem; }
+      .tab-btn { padding: 9px 14px; font-size: 0.86rem; }
+    }
+  </style>
+</head>
+<body>
+  {% set stock_bajo = alertas.stock_bajo if alertas else [] %}
+  {% set por_vencer = alertas.por_vencer if alertas else [] %}
+
+  <div class="page-wrapper">
+    <header class="header">
+      <div class="header-top">
+        <div>
+          <h1>Panel de Administrador</h1>
+          <p>Bienvenido, <strong>{{ usuario }}</strong>. Gestiona el inventario de medicamentos.</p>
+        </div>
+        <a href="/" class="btn-back">Volver al Menú Principal</a>
+      </div>
+      <div class="header-links">
+        <a href="/caja">Caja / Ventas</a>
+        <a href="/logout">Cerrar Sesion</a>
+      </div>
+    </header>
+
+    {% if bd_error %}
+    <section class="panel" style="border-left: 4px solid #dc2626;">
+      <h2 style="color:#b91c1c;">Base de datos no disponible</h2>
+      <p class="hint">
+        No se pudieron cargar el inventario ni las alertas porque el servidor no pudo
+        conectarse a MySQL. Los datos mostrados abajo pueden estar incompletos.
+        Verifica que el servicio de MySQL esté activo y recarga la página.
+      </p>
+    </section>
+    {% endif %}
+
+    <!-- ── Alertas del Inventario (avisos originales) ── -->
+    <section class="panel">
+      <h2>Alertas del Inventario</h2>
+      {% if stock_bajo or por_vencer %}
+        <div class="alertas-grid">
+          {% if stock_bajo %}
+            <div class="alerta-card stock-bajo">
+              <h3>Stock Bajo (≤ 5 unidades)</h3>
+              <ul class="alerta-lista">
+                {% for med in stock_bajo %}
+                  <li>
+                    <span class="alerta-nombre">{{ med.nombre }}</span>
+                    <span class="alerta-valor">{{ med.stock }} unidad{{ 'es' if med.stock != 1 }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+          {% if por_vencer %}
+            <div class="alerta-card por-vencer">
+              <h3>Por Vencer (≤ 30 días)</h3>
+              <ul class="alerta-lista">
+                {% for med in por_vencer %}
+                  <li>
+                    <span class="alerta-nombre">{{ med.nombre }}</span>
+                    <span class="alerta-valor">Vence: {{ med.fecha_vencimiento }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="alerta-empty">No hay alertas activas. Todo el inventario está en orden.</p>
+      {% endif %}
+    </section>
+
+    <!-- ═══════════ PESTAÑAS: TABLAS PRINCIPALES ═══════════ -->
+    <nav class="tabs" role="tablist" aria-label="Tablas principales">
+      <button class="tab-btn active" data-tab="inventario" role="tab" aria-selected="true" aria-controls="tab-inventario" type="button">Inventario de Medicamentos</button>
+      <button class="tab-btn" data-tab="historial" role="tab" aria-selected="false" aria-controls="tab-historial" type="button">Historial de Ventas</button>
+      <button class="tab-btn" data-tab="clientes" role="tab" aria-selected="false" aria-controls="tab-clientes" type="button">Clientes</button>
+      <button class="tab-btn" data-tab="comprobantes" role="tab" aria-selected="false" aria-controls="tab-comprobantes" type="button">Comprobantes</button>
+    </nav>
+
+    <!-- ── Pestaña: Inventario ── -->
+    <section id="tab-inventario" class="tab-panel active" role="tabpanel">
+      <div class="panel">
+        <h2>Inventario de Medicamentos</h2>
+        {% if medicamentos %}
+          <div class="table-wrapper table-container-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Código Barras</th>
+                  <th>Categoría</th>
+                  <th>Componente</th>
+                  <th>Laboratorio</th>
+                  <th>Precio Ud.</th>
+                  <th>Presentaciones</th>
+                  <th>Stock</th>
+                  <th>Vencimiento</th>
+                  <th>Receta</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for med in medicamentos %}
+                  <tr>
+                    <td>{{ med.nombre }}</td>
+                    <td>{{ med.codigo_barras or "—" }}</td>
+                    <td>{{ med.categoria or "—" }}</td>
+                    <td>{{ med.componente or "—" }}</td>
+                    <td>{{ med.laboratorio or "—" }}</td>
+                    <td>S/ {{ "%.2f"|format(med.precio) }}</td>
+                    <td>
+                      {% if med.presentaciones %}
+                        {% for pres in med.presentaciones %}
+                          <span class="pres-badge" title="Factor: {{ pres.factor_conversion }} uds base — S/ {{ '%.2f'|format(pres.precio) }}">{{ pres.nombre }} ×{{ "%.0f"|format(pres.factor_conversion) }}</span>
+                        {% endfor %}
+                      {% else %}
+                        <span class="pres-vacio">Solo unidad</span>
+                      {% endif %}
+                      <button type="button" class="btn-gestionar-pres" data-id="{{ med.id }}">Gestionar</button>
+                    </td>
+                    <td><span class="stock-badge {{ 'low' if med.stock <= 5 else '' }}">{{ med.stock }}</span></td>
+                    <td>
+                      {% if med.fecha_vencimiento %}
+                        <span class="vencimiento-badge danger">Vence: {{ med.fecha_vencimiento }}</span>
+                      {% else %}
+                        <span class="vencimiento-badge sin-fecha">Sin fecha</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ "Sí" if med.requiere_receta else "No" }}</td>
+                    <td>
+                      <div class="row-actions">
+                        <form class="restock-form" data-id="{{ med.id }}" data-nombre="{{ med.nombre }}">
+                          <input type="number" name="cantidad" min="1" step="1" value="10" required />
+                          <button type="submit">Reabastecer</button>
+                        </form>
+                        <button type="button" class="discontinue-btn" data-id="{{ med.id }}" data-nombre="{{ med.nombre }}">Dar de baja / Descontinuar</button>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">No hay medicamentos registrados. Agrega el primero con el formulario de abajo.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- ── Pestaña: Historial de Ventas ── -->
+    <section id="tab-historial" class="tab-panel" role="tabpanel">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Historial de Ventas</h2>
+          <button id="btn-refrescar-historial" class="btn-back" type="button">Actualizar</button>
+        </div>
+        <p class="hint">Últimos 50 comprobantes. Usa "Ver Detalle" para ver los productos de cada venta.</p>
+        <div class="table-wrapper table-container-scroll">
+          <table class="tabla-historial">
+            <thead>
+              <tr>
+                <th>Comprobante</th>
+                <th>Tipo</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Documento</th>
+                <th>Total</th>
+                <th>Pago</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="historial-tbody">
+              <tr><td colspan="8" class="empty">Cargando historial...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="historial-msg" class="form-msg" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ── Pestaña: Clientes ── -->
+    <section id="tab-clientes" class="tab-panel" role="tabpanel">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Clientes</h2>
+          <button id="btn-refrescar-clientes" class="btn-back" type="button">Actualizar</button>
+        </div>
+        <p class="hint">Clientes registrados, ordenados por cantidad de compras.</p>
+        <div class="table-wrapper table-container-scroll">
+          <table class="tabla-media">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Tipo Doc.</th>
+                <th>Nº Documento</th>
+                <th>Dirección</th>
+                <th>Compras</th>
+                <th>Total Consumado</th>
+              </tr>
+            </thead>
+            <tbody id="clientes-tbody">
+              <tr><td colspan="6" class="empty">Cargando clientes...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="clientes-msg" class="form-msg" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ── Pestaña: Comprobantes ── -->
+    <section id="tab-comprobantes" class="tab-panel" role="tabpanel">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Comprobantes Emitidos</h2>
+          <button id="btn-refrescar-comprobantes" class="btn-back" type="button">Actualizar</button>
+        </div>
+        <p class="hint">Cabecera de los últimos 50 comprobantes emitidos.</p>
+        <div class="table-wrapper table-container-scroll">
+          <table class="tabla-media">
+            <thead>
+              <tr>
+                <th>Comprobante</th>
+                <th>Tipo</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Documento</th>
+                <th>Subtotal</th>
+                <th>IGV</th>
+                <th>Total</th>
+                <th>Pago</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="comprobantes-tbody">
+              <tr><td colspan="10" class="empty">Cargando comprobantes...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="comprobantes-msg" class="form-msg" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- Reporte de ganancias con filtros -->
+    <section class="panel">
+      <h2>Reporte de Ganancias</h2>
+
+      <!-- Filtros de fecha -->
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px;">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.88rem;font-weight:600;color:var(--secondary);">
+          Año
+          <select id="filtro-anio" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:0.95rem;background:var(--surface-soft);color:#0f172a;">
+            <option value="">Todos</option>
+          </select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.88rem;font-weight:600;color:var(--secondary);">
+          Mes
+          <select id="filtro-mes" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:0.95rem;background:var(--surface-soft);color:#0f172a;">
+            <option value="">Todos</option>
+            <option value="1">Enero</option>
+            <option value="2">Febrero</option>
+            <option value="3">Marzo</option>
+            <option value="4">Abril</option>
+            <option value="5">Mayo</option>
+            <option value="6">Junio</option>
+            <option value="7">Julio</option>
+            <option value="8">Agosto</option>
+            <option value="9">Septiembre</option>
+            <option value="10">Octubre</option>
+            <option value="11">Noviembre</option>
+            <option value="12">Diciembre</option>
+          </select>
+        </label>
+        <button id="btn-filtrar-reporte" type="button" class="primary-btn" style="margin-bottom:0;">Aplicar filtro</button>
+        <button id="btn-limpiar-reporte" type="button" style="border:1px solid var(--border);border-radius:12px;background:#f8fafc;color:var(--secondary);font-weight:700;font-size:0.92rem;padding:10px 18px;cursor:pointer;margin-bottom:0;">Limpiar</button>
+      </div>
+
+      <!-- Tarjetas resumen -->
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Ingresos Totales</span>
+          <span class="stat-value" id="stat-ingresos">Cargando...</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">IGV Total (18%)</span>
+          <span class="stat-value" id="stat-igv">Cargando...</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Ventas Registradas</span>
+          <span class="stat-value" id="stat-ventas">Cargando...</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Ticket Promedio</span>
+          <span class="stat-value" id="stat-promedio">Cargando...</span>
+        </div>
+      </div>
+
+      <!-- Desglose por método de pago -->
+      <div id="metodos-pago-section" style="margin-top:20px;display:none;">
+        <h3 style="margin:0 0 12px;font-size:1.05rem;color:#0f172a;">Desglose por Método de Pago</h3>
+        <div id="metodos-pago-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;"></div>
+      </div>
+    </section>
+
+    <!-- Registrar nuevo medicamento -->
+    <section class="panel">
+      <h2>Registrar Nuevo Medicamento</h2>
+      <form id="registrar-form" novalidate>
+        <div class="form-grid">
+          <label>Nombre
+            <input type="text" name="nombre" placeholder="Ej: Apronax" required />
+          </label>
+          <label>Código de barras
+            <input type="text" name="codigo_barras" placeholder="Ej: 7751034036505" />
+          </label>
+          <label>Categoría
+            <input type="text" name="categoria" placeholder="Ej: Analgésico" />
+          </label>
+          <label>Componente genérico
+            <input type="text" name="componente" placeholder="Ej: Naproxeno" />
+          </label>
+          <label>Laboratorio
+            <input type="text" name="laboratorio" placeholder="Ej: Bayer" />
+          </label>
+          <label>Precio (S/)
+            <input type="number" name="precio" min="0.01" step="0.01" placeholder="15.50" required />
+          </label>
+          <label>Precio Blíster (S/)
+            <input type="number" name="precio_blister" min="0.01" step="0.01" placeholder="Ej: 45.00 (opcional)" />
+          </label>
+          <label>Unidades por Blíster
+            <input type="number" name="unidades_por_blister" min="1" step="1" value="1" placeholder="Ej: 10" />
+          </label>
+          <label>Stock inicial
+            <input type="number" name="stock" min="0" step="1" placeholder="20" required />
+          </label>
+          <label>Fecha de vencimiento
+            <input type="date" name="fecha_vencimiento" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" name="requiere_receta" />
+            Requiere receta médica
+          </label>
+        </div>
+        <button type="submit" class="primary-btn">Registrar Medicamento</button>
+        <div id="registrar-msg" class="form-msg" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <!-- Carga masiva por CSV -->
+    <section class="panel">
+      <h2>Carga Masiva de Medicamentos</h2>
+      <p style="color: var(--muted); margin: 0 0 16px; font-size: 0.93rem;">
+        Sube un archivo <strong>.csv</strong> con los medicamentos a registrar.
+        Las columnas requeridas son: <code>nombre</code>, <code>stock</code> y <code>precio</code>.
+        Las demás son opcionales.
+      </p>
+
+      <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
+        <a href="/admin/plantilla-csv" class="btn-back" style="text-decoration: none; font-size: 0.9rem;">
+          Descargar Plantilla CSV
+        </a>
+        <form id="csv-form" enctype="multipart/form-data" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <input type="file" name="archivo" accept=".csv" id="csv-input" style="display: none;" />
+          <button type="button" class="primary-btn" id="csv-seleccionar-btn" style="font-size: 0.9rem;">
+            Seleccionar Archivo
+          </button>
+          <span id="csv-nombre-archivo" style="color: var(--muted); font-size: 0.9rem;">Ningún archivo seleccionado</span>
+          <button type="submit" class="primary-btn" id="csv-subir-btn" disabled style="font-size: 0.9rem;">
+            Subir e Importar
+          </button>
+        </form>
+      </div>
+
+      <div id="csv-progress" style="display: none; margin-bottom: 12px;">
+        <div style="background: #e5e7eb; border-radius: 999px; height: 8px; overflow: hidden;">
+          <div id="csv-progress-bar" style="width: 0%; height: 100%; background: var(--primary); border-radius: 999px; transition: width 0.3s;"></div>
+        </div>
+      </div>
+
+      <div id="csv-msg" class="form-msg" role="status" aria-live="polite"></div>
+
+      <details style="margin-top: 18px; color: var(--muted); font-size: 0.9rem;">
+        <summary style="cursor: pointer; font-weight: 600; color: var(--secondary);">Formato esperado del CSV</summary>
+        <div style="margin-top: 10px; overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; min-width: 600px; font-size: 0.88rem;">
+            <thead>
+              <tr>
+                <th style="padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); background: #f8fafc;">Columna</th>
+                <th style="padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); background: #f8fafc;">Obligatoria</th>
+                <th style="padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); background: #f8fafc;">Ejemplo</th>
+                <th style="padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); background: #f8fafc;">Descripción</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="padding:6px 10px;"><code>nombre</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">Paracetamol 500mg</td><td style="padding:6px 10px;">Nombre comercial del medicamento</td></tr>
+              <tr><td style="padding:6px 10px;"><code>stock</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">100</td><td style="padding:6px 10px;">Unidades disponibles (entero)</td></tr>
+              <tr><td style="padding:6px 10px;"><code>precio</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">12.50</td><td style="padding:6px 10px;">Precio unitario en soles</td></tr>
+              <tr><td style="padding:6px 10px;"><code>categoria</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Analgésico</td><td style="padding:6px 10px;">Categoría terapéutica</td></tr>
+              <tr><td style="padding:6px 10px;"><code>componente</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Paracetamol</td><td style="padding:6px 10px;">Componente genérico</td></tr>
+              <tr><td style="padding:6px 10px;"><code>laboratorio</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Bayer</td><td style="padding:6px 10px;">Nombre del laboratorio</td></tr>
+              <tr><td style="padding:6px 10px;"><code>codigo_barras</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">7751000000001</td><td style="padding:6px 10px;">Código EAN-13</td></tr>
+              <tr><td style="padding:6px 10px;"><code>requiere_receta</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">true / false</td><td style="padding:6px 10px;">Si es true, 1, si o sí</td></tr>
+              <tr><td style="padding:6px 10px;"><code>fecha_vencimiento</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">2027-06-30</td><td style="padding:6px 10px;">Formato AAAA-MM-DD</td></tr>
+              <tr><td style="padding:6px 10px;"><code>unidades_por_blister</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">10</td><td style="padding:6px 10px;">Cuántas pastillas tiene un blíster (default: 1)</td></tr>
+              <tr><td style="padding:6px 10px;"><code>precio_blister</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">45.00</td><td style="padding:6px 10px;">Precio con descuento por el blíster completo</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <!-- ═══════════ MODAL: DETALLE DE COMPROBANTE ═══════════ -->
+  <div id="modal-detalle" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+      <div class="modal-cabecera">
+        <h3 id="modal-titulo">Detalle del Comprobante</h3>
+        <button id="modal-cerrar" class="modal-cerrar" type="button" aria-label="Cerrar">&times;</button>
+      </div>
+      <div class="modal-resumen" id="modal-resumen"></div>
+      <div class="modal-cuerpo">
+        <table class="tabla-modal">
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Cant.</th>
+              <th>Precio Unit.</th>
+              <th>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody id="modal-items"></tbody>
+        </table>
+      </div>
+      <div class="modal-pie">
+        <span class="modal-total">Total: <strong id="modal-total">S/ 0.00</strong></span>
+        <button id="modal-aceptar" class="primary-btn" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ MODAL: GESTIÓN DE PRESENTACIONES ═══════════ -->
+  <div id="modal-presentaciones" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="pres-modal-titulo">
+      <div class="modal-cabecera">
+        <h3 id="pres-modal-titulo">Presentaciones</h3>
+        <button id="pres-modal-cerrar" class="modal-cerrar" type="button" aria-label="Cerrar">&times;</button>
+      </div>
+
+      <div class="modal-resumen" id="pres-modal-resumen"></div>
+
+      <div class="modal-cuerpo">
+        <!-- Lista de presentaciones actuales (se llena por JS) -->
+        <div id="pres-lista"></div>
+
+        <!-- Formulario para agregar una nueva presentación -->
+        <form id="pres-form-nueva" style="padding:14px 12px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
+          <label style="flex:2 1 140px;">Nombre
+            <input type="text" id="pres-nueva-nombre" placeholder="Ej: Caja, Frasco 120ml" maxlength="50" required />
+          </label>
+          <label style="flex:1 1 90px;">Factor
+            <input type="number" id="pres-nueva-factor" min="1" step="1" placeholder="30" required />
+          </label>
+          <label style="flex:1 1 90px;">Precio S/
+            <input type="number" id="pres-nueva-precio" min="0.01" step="0.01" placeholder="45.00" required />
+          </label>
+          <button type="submit" class="btn-pres-guardar">+ Agregar</button>
+        </form>
+        <p style="margin:0 12px 10px; font-size:0.82rem; color:var(--muted);">
+          El <strong>factor</strong> es cuántas unidades base contiene la presentación
+          (ej: Caja = 30 tabletas). Al vender, el stock se descuenta por esa equivalencia.
+        </p>
+      </div>
+
+      <div class="modal-pie">
+        <span id="pres-msg" class="form-msg" role="status" aria-live="polite" style="margin-right:auto;"></span>
+        <button id="pres-modal-aceptar" class="primary-btn" type="button">Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Utilidad: escapar HTML para evitar inyección al renderizar datos ──
+    function escapeHtml(texto) {
+      const div = document.createElement('div');
+      div.textContent = texto == null ? '' : String(texto);
+      return div.innerHTML;
+    }
+
+    function mostrarMsg(mensaje, esError) {
+      const el = document.getElementById('registrar-msg');
+      el.textContent = mensaje;
+      el.className = 'form-msg' + (esError ? ' error' : ' ok');
+    }
+
+    // ── Estado compartido de datos ──
+    // IMPORTANTE: estas variables y funciones se declaran ANTES del sistema
+    // de pestañas porque restaurarTab() puede disparar las cargas en cuanto
+    // se define; acceder a un `let` antes de su declaración lanza
+    // "ReferenceError: Cannot access ... before initialization".
+
+    // Caché de la última lista de ventas consultada: la usa el modal
+    // de detalle para mostrar items sin otra petición al servidor.
+    let ventasActuales = [];
+
+    // Promesa compartida de /admin/ventas: Historial y Comprobantes
+    // consumen la misma respuesta sin duplicar requests.
+    let ventasPromesa = null;
+
+    function obtenerVentas() {
+      if (!ventasPromesa) {
+        ventasPromesa = (async function () {
+          const resp = await fetch('/admin/ventas');
+          const data = await resp.json();
+          if (!resp.ok || !data.success) {
+            throw new Error(data.error || 'No se pudieron cargar las ventas.');
+          }
+          return data.ventas;
+        })();
+      }
+      return ventasPromesa;
+    }
+
+    // Bandera de carga perezosa de la pestaña Clientes.
+    let clientesCargados = false;
+
+    // ── Sistema de pestañas (con persistencia y carga perezosa) ──
+    const botonesTab = document.querySelectorAll('.tab-btn');
+    const TAB_STORAGE_KEY = 'farmacia_tab_activa';
+
+    // Cada pestaña con datos remotos se carga la primera vez que se abre.
+    const cargadoresTab = {
+      historial: cargarHistorial,
+      clientes: cargarClientes,
+      comprobantes: cargarComprobantes,
+    };
+
+    function activarTab(nombre) {
+      botonesTab.forEach(function (b) {
+        const activo = b.dataset.tab === nombre;
+        b.classList.toggle('active', activo);
+        b.setAttribute('aria-selected', activo ? 'true' : 'false');
+      });
+      document.querySelectorAll('.tab-panel').forEach(function (p) {
+        p.classList.toggle('active', p.id === 'tab-' + nombre);
+      });
+
+      // Cargar datos de la pestaña si aún no se han traído.
+      if (cargadoresTab[nombre]) cargadoresTab[nombre]();
+
+      // Guardar la pestaña activa para restaurarla al recargar.
+      try {
+        localStorage.setItem(TAB_STORAGE_KEY, nombre);
+      } catch (e) { /* localStorage puede fallar en modo privado; ignorar */ }
+    }
+
+    botonesTab.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        activarTab(btn.dataset.tab);
+      });
+    });
+
+    // Al cargar la página: restaurar la última pestaña vista.
+    // Si no hay valor guardado o es inválido, cae al default 'inventario'.
+    (function restaurarTab() {
+      let guardada = null;
+      try {
+        guardada = localStorage.getItem(TAB_STORAGE_KEY);
+      } catch (e) { /* noop */ }
+      const valida = guardada && Array.from(botonesTab).some(function (b) {
+        return b.dataset.tab === guardada;
+      });
+      activarTab(valida ? guardada : 'inventario');
+    })();
+
+    // ── Pestaña: Historial de Ventas ──
+    async function cargarHistorial() {
+      const tbody = document.getElementById('historial-tbody');
+      const msg = document.getElementById('historial-msg');
+      try {
+        const ventas = await obtenerVentas();
+        ventasActuales = ventas;
+
+        tbody.innerHTML = '';
+        if (!ventas.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">Aún no hay ventas registradas.</td></tr>';
+          return;
+        }
+
+        ventas.forEach(function (v) {
+          const tr = document.createElement('tr');
+          const fechaFmt = v.fecha ? String(v.fecha).slice(0, 16) : '—';
+          const tipoClase = 'tipo-' + String(v.tipo_comprobante || '').toLowerCase();
+
+          tr.innerHTML =
+            '<td><strong>' + escapeHtml(v.serie) + '-' + String(v.correlativo).padStart(6, '0') + '</strong></td>' +
+            '<td><span class="tipo-badge ' + tipoClase + '">' + escapeHtml(String(v.tipo_comprobante).replace('_', ' ')) + '</span></td>' +
+            '<td>' + escapeHtml(fechaFmt) + '</td>' +
+            '<td>' + escapeHtml(v.cliente) + '</td>' +
+            '<td>' + escapeHtml(v.documento) + '</td>' +
+            '<td><strong>S/ ' + Number(v.total).toFixed(2) + '</strong></td>' +
+            '<td>' + escapeHtml(v.metodo_pago) + '</td>' +
+            '<td><button type="button" class="btn-ver-detalle" data-id="' + v.id + '">Ver Detalle</button></td>';
+
+          tbody.appendChild(tr);
+        });
+
+        msg.textContent = '';
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">No se pudo cargar el historial.</td></tr>';
+        msg.textContent = 'Error: ' + err.message;
+        msg.className = 'form-msg error';
+      }
+    }
+
+    // ── Pestaña: Comprobantes (cabecera, sin detalle de items) ──
+    async function cargarComprobantes() {
+      const tbody = document.getElementById('comprobantes-tbody');
+      const msg = document.getElementById('comprobantes-msg');
+      try {
+        const ventas = await obtenerVentas();
+        ventasActuales = ventas;
+
+        tbody.innerHTML = '';
+        if (!ventas.length) {
+          tbody.innerHTML = '<tr><td colspan="10" class="empty">Aún no hay comprobantes emitidos.</td></tr>';
+          return;
+        }
+
+        ventas.forEach(function (v) {
+          const tr = document.createElement('tr');
+          const fechaFmt = v.fecha ? String(v.fecha).slice(0, 16) : '—';
+          const tipoClase = 'tipo-' + String(v.tipo_comprobante || '').toLowerCase();
+
+          tr.innerHTML =
+            '<td><strong>' + escapeHtml(v.serie) + '-' + String(v.correlativo).padStart(6, '0') + '</strong></td>' +
+            '<td><span class="tipo-badge ' + tipoClase + '">' + escapeHtml(String(v.tipo_comprobante).replace('_', ' ')) + '</span></td>' +
+            '<td>' + escapeHtml(fechaFmt) + '</td>' +
+            '<td>' + escapeHtml(v.cliente) + '</td>' +
+            '<td>' + escapeHtml(v.documento) + '</td>' +
+            '<td>S/ ' + Number(v.subtotal).toFixed(2) + '</td>' +
+            '<td>S/ ' + Number(v.igv).toFixed(2) + '</td>' +
+            '<td><strong>S/ ' + Number(v.total).toFixed(2) + '</strong></td>' +
+            '<td>' + escapeHtml(v.metodo_pago) + '</td>' +
+            '<td><button type="button" class="btn-ver-detalle" data-id="' + v.id + '">Ver Detalle</button></td>';
+
+          tbody.appendChild(tr);
+        });
+
+        msg.textContent = '';
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="10" class="empty">No se pudieron cargar los comprobantes.</td></tr>';
+        msg.textContent = 'Error: ' + err.message;
+        msg.className = 'form-msg error';
+      }
+    }
+
+    // Botón Actualizar del historial: invalida la caché compartida
+    // y recarga también la pestaña Comprobantes si ya fue abierta.
+    document.getElementById('btn-refrescar-historial').addEventListener('click', function () {
+      ventasPromesa = null;
+      cargarHistorial();
+      if (document.getElementById('comprobantes-tbody').rows.length > 1) {
+        cargarComprobantes();
+      }
+    });
+
+    // ── Pestaña: Clientes ──
+    // Se carga solo la primera vez que se abre la pestaña;
+    // el botón Actualizar fuerza la recarga con cargarClientes(true).
+    async function cargarClientes(forzar) {
+      if (clientesCargados && !forzar) return;
+      const tbody = document.getElementById('clientes-tbody');
+      const msg = document.getElementById('clientes-msg');
+      try {
+        const resp = await fetch('/admin/clientes');
+        const data = await resp.json();
+        if (!resp.ok || !data.success) {
+          throw new Error(data.error || 'No se pudo cargar la lista de clientes.');
+        }
+
+        tbody.innerHTML = '';
+        if (!data.clientes.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">Aún no hay clientes registrados.</td></tr>';
+          return;
+        }
+
+        data.clientes.forEach(function (c) {
+          const tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td><strong>' + escapeHtml(c.nombre) + '</strong></td>' +
+            '<td>' + escapeHtml(c.tipo_documento) + '</td>' +
+            '<td>' + escapeHtml(c.documento) + '</td>' +
+            '<td>' + escapeHtml(c.direccion) + '</td>' +
+            '<td>' + c.num_compras + '</td>' +
+            '<td><strong>S/ ' + Number(c.total_comprado).toFixed(2) + '</strong></td>';
+          tbody.appendChild(tr);
+        });
+
+        clientesCargados = true;
+        msg.textContent = '';
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No se pudo cargar la lista de clientes.</td></tr>';
+        msg.textContent = 'Error: ' + err.message;
+        msg.className = 'form-msg error';
+      }
+    }
+
+    document.getElementById('btn-refrescar-clientes').addEventListener('click', function () {
+      cargarClientes(true);
+    });
+    document.getElementById('btn-refrescar-comprobantes').addEventListener('click', function () {
+      ventasPromesa = null;
+      cargarComprobantes();
+    });
+
+    // ── Modal de detalle de comprobante ──
+    const modalDetalle = document.getElementById('modal-detalle');
+
+    function abrirModalDetalle(ventaId) {
+      // Busca la venta en la lista ya consultada (sin nueva petición).
+      const v = ventasActuales.find(function (x) { return x.id === Number(ventaId); });
+      if (!v) return;
+
+      const tipoClase = 'tipo-' + String(v.tipo_comprobante || '').toLowerCase();
+      const fechaFmt = v.fecha ? String(v.fecha).slice(0, 16) : '—';
+
+      document.getElementById('modal-titulo').textContent =
+        'Comprobante ' + v.serie + '-' + String(v.correlativo).padStart(6, '0');
+
+      document.getElementById('modal-resumen').innerHTML =
+        '<span class="tipo-badge ' + tipoClase + '">' +
+        escapeHtml(String(v.tipo_comprobante).replace('_', ' ')) + '</span>' +
+        '<span><strong>Fecha:</strong> ' + escapeHtml(fechaFmt) + '</span>' +
+        '<span><strong>Cliente:</strong> ' + escapeHtml(v.cliente) + '</span>' +
+        '<span><strong>Doc:</strong> ' + escapeHtml(v.documento) + '</span>' +
+        '<span><strong>Pago:</strong> ' + escapeHtml(v.metodo_pago) + '</span>';
+
+      const tbodyItems = document.getElementById('modal-items');
+      tbodyItems.innerHTML = '';
+      if (v.items && v.items.length) {
+        v.items.forEach(function (i) {
+          const tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td>' + escapeHtml(i.producto) + '</td>' +
+            '<td>' + i.cantidad + '</td>' +
+            '<td>S/ ' + Number(i.precio_unitario).toFixed(2) + '</td>' +
+            '<td>S/ ' + Number(i.subtotal).toFixed(2) + '</td>';
+          tbodyItems.appendChild(tr);
+        });
+      } else {
+        tbodyItems.innerHTML = '<tr><td colspan="4" class="empty">Sin items registrados.</td></tr>';
+      }
+
+      document.getElementById('modal-total').textContent = 'S/ ' + Number(v.total).toFixed(2);
+
+      modalDetalle.hidden = false;
+    }
+
+    function cerrarModalDetalle() {
+      modalDetalle.hidden = true;  // "volver a la pestaña": la tabla queda intacta
+    }
+
+    // Cerrar con el botón X y con el botón "Cerrar"
+    document.getElementById('modal-cerrar').addEventListener('click', cerrarModalDetalle);
+    document.getElementById('modal-aceptar').addEventListener('click', cerrarModalDetalle);
+
+    // Cerrar al hacer clic fuera de la caja (sobre el fondo oscuro)
+    modalDetalle.addEventListener('click', function (e) {
+      if (e.target === modalDetalle) cerrarModalDetalle();
+    });
+
+    // Cerrar con la tecla Escape
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !modalDetalle.hidden) cerrarModalDetalle();
+    });
+
+    // Delegación de eventos: un solo listener por tabla detecta los
+    // clics en cualquier botón "Ver Detalle" (presentes o futuros).
+    document.getElementById('historial-tbody').addEventListener('click', function (e) {
+      const btn = e.target.closest('.btn-ver-detalle');
+      if (btn) abrirModalDetalle(btn.dataset.id);
+    });
+
+    document.getElementById('comprobantes-tbody').addEventListener('click', function (e) {
+      const btn = e.target.closest('.btn-ver-detalle');
+      if (btn) abrirModalDetalle(btn.dataset.id);
+    });
+
+    // ── Reporte de ganancias con filtros ──
+    const filtroAnio = document.getElementById('filtro-anio');
+    const filtroMes  = document.getElementById('filtro-mes');
+    const btnFiltrar = document.getElementById('btn-filtrar-reporte');
+    const btnLimpiar = document.getElementById('btn-limpiar-reporte');
+
+    // Poblar selector de años desde la BD (usa el endpoint sin filtros)
+    async function poblarAnios() {
+      try {
+        const resp = await fetch('/admin/reporte');
+        const data = await resp.json();
+        if (!resp.ok || !data.success) return;
+      } catch (e) { /* noop */ }
+      // Poblar con años de uso común (se puede mejorar con un endpoint dedicado)
+      const anioActual = new Date().getFullYear();
+      for (let y = anioActual; y >= anioActual - 3; y--) {
+        const opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y;
+        filtroAnio.appendChild(opt);
+      }
+    }
+    poblarAnios();
+
+    async function cargarReporte(mes, anio) {
+      const params = new URLSearchParams();
+      if (mes)  params.set('mes', mes);
+      if (anio) params.set('anio', anio);
+
+      const url = '/admin/reporte' + (params.toString() ? '?' + params.toString() : '');
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+          const r = data.reporte;
+          document.getElementById('stat-ingresos').textContent = 'S/ ' + Number(r.total_ingresos).toFixed(2);
+          document.getElementById('stat-igv').textContent = 'S/ ' + Number(r.total_igv).toFixed(2);
+          document.getElementById('stat-ventas').textContent = r.cantidad_ventas;
+          const promedio = r.cantidad_ventas > 0 ? r.total_ingresos / r.cantidad_ventas : 0;
+          document.getElementById('stat-promedio').textContent = 'S/ ' + promedio.toFixed(2);
+
+          // Desglose por método de pago
+          const grid = document.getElementById('metodos-pago-grid');
+          const section = document.getElementById('metodos-pago-section');
+          grid.innerHTML = '';
+          if (r.metodos_pago && r.metodos_pago.length > 0) {
+            section.style.display = 'block';
+            r.metodos_pago.forEach(function (mp) {
+              const card = document.createElement('div');
+              card.style.cssText = 'padding:14px 16px;border-radius:12px;border:1px solid rgba(59,130,246,0.16);background:var(--surface-soft);';
+              const color = mp.metodo === 'Efectivo' ? '#15803d' : mp.metodo === 'Yape' ? '#7c3aed' : mp.metodo === 'Tarjeta' ? '#2563eb' : '#475569';
+              card.innerHTML =
+                '<div style="font-weight:700;font-size:0.92rem;color:' + color + ';margin-bottom:4px;">' + mp.metodo + '</div>' +
+                '<div style="font-size:1.1rem;font-weight:800;color:#0f172a;">S/ ' + Number(mp.total).toFixed(2) + '</div>' +
+                '<div style="font-size:0.82rem;color:var(--muted);">' + mp.cantidad + ' venta' + (mp.cantidad !== 1 ? 's' : '') + '</div>';
+              grid.appendChild(card);
+            });
+          } else {
+            section.style.display = 'none';
+          }
+        } else {
+          document.getElementById('stat-ingresos').textContent = 'Error';
+          document.getElementById('stat-igv').textContent = 'Error';
+          document.getElementById('stat-ventas').textContent = 'Error';
+          document.getElementById('stat-promedio').textContent = 'Error';
+        }
+      } catch (err) {
+        document.getElementById('stat-ingresos').textContent = 'Error';
+        document.getElementById('stat-igv').textContent = 'Error';
+        document.getElementById('stat-ventas').textContent = 'Error';
+        document.getElementById('stat-promedio').textContent = 'Error';
+      }
+    }
+
+    // Cargar reporte sin filtros al abrir
+    cargarReporte();
+
+    // Botón filtrar
+    btnFiltrar.addEventListener('click', function () {
+      cargarReporte(filtroMes.value || null, filtroAnio.value || null);
+    });
+
+    // Botón limpiar
+    btnLimpiar.addEventListener('click', function () {
+      filtroMes.value = '';
+      filtroAnio.value = '';
+      cargarReporte();
+    });
+
+    // Dar de baja / descontinuar un medicamento.
+    document.querySelectorAll('.discontinue-btn').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const id = Number(btn.dataset.id);
+        const nombre = btn.dataset.nombre;
+        if (!window.confirm('¿Dar de baja "' + nombre + '" ? Dejará de aparecer en las ventas activas.')) {
+          return;
+        }
+        btn.disabled = true;
+        try {
+          const resp = await fetch('/admin/descontinuar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ medicamento_id: id })
+          });
+          const data = await resp.json();
+          if (resp.ok && data.success) {
+            mostrarMsg(nombre + ' dado de baja correctamente.');
+            setTimeout(function () { location.reload(); }, 700);
+          } else {
+            mostrarMsg('Error: ' + (data.error || 'No se pudo dar de baja.'), true);
+            btn.disabled = false;
+          }
+        } catch (err) {
+          mostrarMsg('Error de red: ' + err.message, true);
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // Reabastecer stock de un medicamento del listado.
+    document.querySelectorAll('.restock-form').forEach(function (form) {
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const id = Number(form.dataset.id);
+        const nombre = form.dataset.nombre;
+        const cantidad = Number(form.querySelector('input[name="cantidad"]').value);
+        const btn = form.querySelector('button');
+        btn.disabled = true;
+
+        try {
+          const resp = await fetch('/admin/reabastecer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ medicamento_id: id, cantidad: cantidad })
+          });
+          const data = await resp.json();
+          if (resp.ok && data.success) {
+            mostrarMsg(nombre + ' reabastecido. Nuevo stock: ' + data.nuevo_stock);
+            setTimeout(function () { location.reload(); }, 700);
+          } else {
+            mostrarMsg('Error: ' + (data.error || 'No se pudo reabastecer.'), true);
+            btn.disabled = false;
+          }
+        } catch (err) {
+          mostrarMsg('Error de red: ' + err.message, true);
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // Registrar un nuevo medicamento.
+    document.getElementById('registrar-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const f = e.target;
+      const payload = {
+        nombre: f.nombre.value.trim(),
+        codigo_barras: f.codigo_barras.value.trim(),
+        categoria: f.categoria.value.trim(),
+        componente: f.componente.value.trim(),
+        laboratorio: f.laboratorio.value.trim(),
+        precio: Number(f.precio.value),
+        stock: Number(f.stock.value),
+        requiere_receta: f.requiere_receta.checked,
+        fecha_vencimiento: f.fecha_vencimiento.value || null,
+        unidades_por_blister: Number(f.unidades_por_blister.value) || 1,
+        precio_blister: f.precio_blister.value ? Number(f.precio_blister.value) : null,
+      };
+      const btn = f.querySelector('button[type="submit"]');
+      btn.disabled = true;
+
+      try {
+        const resp = await fetch('/admin/registrar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+          mostrarMsg('Medicamento "' + data.nombre + '" registrado con exito.');
+          setTimeout(function () { location.reload(); }, 700);
+        } else {
+          mostrarMsg('Error: ' + (data.error || 'No se pudo registrar.'), true);
+          btn.disabled = false;
+        }
+      } catch (err) {
+        mostrarMsg('Error de red: ' + err.message, true);
+        btn.disabled = false;
+      }
+    });
+
+    // ── Carga masiva CSV ──
+    const csvInput = document.getElementById('csv-input');
+    const csvSeleccionarBtn = document.getElementById('csv-seleccionar-btn');
+    const csvSubirBtn = document.getElementById('csv-subir-btn');
+    const csvNombreArchivo = document.getElementById('csv-nombre-archivo');
+    const csvForm = document.getElementById('csv-form');
+    const csvMsg = document.getElementById('csv-msg');
+    const csvProgress = document.getElementById('csv-progress');
+    const csvProgressBar = document.getElementById('csv-progress-bar');
+
+    csvSeleccionarBtn.addEventListener('click', function () {
+      csvInput.click();
+    });
+
+    csvInput.addEventListener('change', function () {
+      if (csvInput.files.length > 0) {
+        csvNombreArchivo.textContent = csvInput.files[0].name;
+        csvSubirBtn.disabled = false;
+      } else {
+        csvNombreArchivo.textContent = 'Ningún archivo seleccionado';
+        csvSubirBtn.disabled = true;
+      }
+    });
+
+    csvForm.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!csvInput.files.length) return;
+
+      const archivo = csvInput.files[0];
+      const formData = new FormData();
+      formData.append('archivo', archivo);
+
+      csvSubirBtn.disabled = true;
+      csvMsg.textContent = 'Importando...';
+      csvMsg.className = 'form-msg';
+      csvProgress.style.display = 'block';
+      csvProgressBar.style.width = '30%';
+
+      try {
+        const resp = await fetch('/admin/importar-csv', {
+          method: 'POST',
+          body: formData
+        });
+
+        csvProgressBar.style.width = '80%';
+        const data = await resp.json();
+
+        csvProgressBar.style.width = '100%';
+
+        if (resp.ok && data.success) {
+          let msg = 'Importación completada. ';
+          msg += 'Insertados: ' + data.insertados + '. ';
+          if (data.duplicados > 0) msg += 'Duplicados omitidos: ' + data.duplicados + '. ';
+          if (data.errores && data.errores.length > 0) {
+            msg += 'Errores (' + data.errores.length + '): ' + data.errores.slice(0, 3).join('; ');
+            if (data.errores.length > 3) msg += '...';
+          }
+          csvMsg.textContent = msg;
+          csvMsg.className = 'form-msg ok';
+          setTimeout(function () { location.reload(); }, 1500);
+        } else {
+          csvMsg.textContent = 'Error: ' + (data.error || 'No se pudo importar.');
+          csvMsg.className = 'form-msg error';
+          csvSubirBtn.disabled = false;
+        }
+      } catch (err) {
+        csvMsg.textContent = 'Error de red: ' + err.message;
+        csvMsg.className = 'form-msg error';
+        csvSubirBtn.disabled = false;
+      }
+
+      setTimeout(function () {
+        csvProgressBar.style.width = '0%';
+        csvProgress.style.display = 'none';
+      }, 800);
+    });
+  </script>
+
+  <!-- ═══════════ GESTOR DE PRESENTACIONES ═══════════
+       Usa los estilos ya definidos arriba (.pres-fila, .pres-input,
+       .btn-pres-guardar, .btn-pres-desactivar y el modal genérico). -->
+  <script>
+    // Objeto GLOBAL inyectado por Flask (ruta admin(): meds_data_json).
+    // Estructura: [{id, nombre, precio, stock, presentaciones: [{id, nombre, factor_conversion, precio}]}]
+    window.MEDICAMENTOS_DATA = {{ meds_data_json | safe }};
+
+    (function () {
+      'use strict';
+
+      const modalPres = document.getElementById('modal-presentaciones');
+      if (!modalPres) return; // Sin modal en esta página: no romper el resto del panel.
+
+      // Referencia al objeto DENTRO de MEDICAMENTOS_DATA: al mutarlo,
+      // la caché queda sincronizada sin volver a pedir datos al servidor.
+      let medActual = null;
+
+      function esc(texto) {
+        const d = document.createElement('div');
+        d.textContent = texto == null ? '' : String(texto);
+        return d.innerHTML;
+      }
+
+      function mostrarMsgPres(mensaje, esError) {
+        const el = document.getElementById('pres-msg');
+        el.textContent = mensaje;
+        el.className = 'form-msg' + (esError ? ' error' : ' ok');
+      }
+
+      // POST JSON centralizado: tolera respuestas sin cuerpo (401, 500 HTML).
+      async function postJSON(url, payload) {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        let data = {};
+        try { data = await resp.json(); } catch (e) { /* cuerpo no JSON */ }
+        return { ok: resp.ok, data: data };
+      }
+
+      function buscarMedicamento(id) {
+        return window.MEDICAMENTOS_DATA.find(function (m) {
+          return Number(m.id) === Number(id);
+        }) || null;
+      }
+
+      function buscarPresentacion(id) {
+        if (!medActual) return null;
+        return medActual.presentaciones.find(function (p) {
+          return Number(p.id) === Number(id);
+        }) || null;
+      }
+
+      // Lista las presentaciones del medicamento actual dentro del modal.
+      function pintarPresentaciones() {
+        const contenedor = document.getElementById('pres-lista');
+        contenedor.innerHTML = '';
+        if (!medActual.presentaciones.length) {
+          contenedor.innerHTML = '<p class="empty" style="padding:12px;">Sin presentaciones registradas. Solo se vende por unidad.</p>';
+          return;
+        }
+        medActual.presentaciones.forEach(function (p) {
+          const fila = document.createElement('div');
+          fila.className = 'pres-fila';
+          fila.innerHTML =
+            '<span class="pres-nombre">' + esc(p.nombre) + '</span>' +
+            '<span class="pres-factor">×' + Number(p.factor_conversion) + ' uds base</span>' +
+            '<input type="number" class="pres-input" min="0.01" step="0.01" value="' + Number(p.precio).toFixed(2) + '" aria-label="Precio de ' + esc(p.nombre) + '" />' +
+            '<button type="button" class="btn-pres-guardar" data-id="' + p.id + '">Guardar</button>' +
+            '<button type="button" class="btn-pres-desactivar" data-id="' + p.id + '">Desactivar</button>';
+          contenedor.appendChild(fila);
+        });
+      }
+
+      // Refleja los cambios en la celda "Presentaciones" de la tabla de inventario.
+      function refrescarBadges(med) {
+        const boton = document.querySelector('.btn-gestionar-pres[data-id="' + med.id + '"]');
+        if (!boton) return;
+        const celda = boton.parentNode;
+        const frag = document.createDocumentFragment();
+        med.presentaciones.forEach(function (p) {
+          const span = document.createElement('span');
+          span.className = 'pres-badge';
+          span.title = 'Factor: ' + p.factor_conversion + ' uds base — S/ ' + Number(p.precio).toFixed(2);
+          span.textContent = p.nombre + ' ×' + Math.round(Number(p.factor_conversion));
+          frag.appendChild(span);
+        });
+        if (!med.presentaciones.length) {
+          const vacio = document.createElement('span');
+          vacio.className = 'pres-vacio';
+          vacio.textContent = 'Solo unidad';
+          frag.appendChild(vacio);
+        }
+        frag.appendChild(boton);
+        celda.innerHTML = '';
+        celda.appendChild(frag);
+      }
+
+      function abrirModalPresentaciones(medId) {
+        const med = buscarMedicamento(medId);
+        if (!med) {
+          medActual = null;
+          mostrarMsgPres('No se encontró el medicamento. Recarga la página.', true);
+          modalPres.hidden = false;
+          return;
+        }
+        medActual = med;
+        document.getElementById('pres-modal-titulo').textContent = 'Presentaciones: ' + med.nombre;
+        document.getElementById('pres-modal-resumen').innerHTML =
+          '<span><strong>Precio unidad:</strong> S/ ' + Number(med.precio).toFixed(2) + '</span>' +
+          '<span><strong>Stock:</strong> ' + esc(med.stock) + ' uds base</span>';
+        pintarPresentaciones();
+        mostrarMsgPres('', false);
+        document.getElementById('pres-form-nueva').reset();
+        modalPres.hidden = false;
+      }
+
+      function cerrarModalPresentaciones() {
+        modalPres.hidden = true;
+        medActual = null;
+      }
+
+      // ── Abrir: delegación en document (un solo listener para todos los botones) ──
+      document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-gestionar-pres');
+        if (btn) abrirModalPresentaciones(btn.dataset.id);
+      });
+
+      // ── Cerrar: botón X, "Listo", clic en el fondo oscuro y tecla Escape ──
+      document.getElementById('pres-modal-cerrar').addEventListener('click', cerrarModalPresentaciones);
+      document.getElementById('pres-modal-aceptar').addEventListener('click', cerrarModalPresentaciones);
+      modalPres.addEventListener('click', function (e) {
+        if (e.target === modalPres) cerrarModalPresentaciones();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !modalPres.hidden) cerrarModalPresentaciones();
+      });
+
+      // ── Guardar precio individual / Desactivar (delegación sobre #pres-lista) ──
+      document.getElementById('pres-lista').addEventListener('click', async function (e) {
+        if (!medActual) return;
+        const btnGuardar = e.target.closest('.btn-pres-guardar');
+        const btnDesact = e.target.closest('.btn-pres-desactivar');
+        if (!btnGuardar && !btnDesact) return;
+
+        const presId = Number((btnGuardar || btnDesact).dataset.id);
+
+        if (btnGuardar) {
+          const input = btnGuardar.closest('.pres-fila').querySelector('.pres-input');
+          const nuevoPrecio = Number(input.value);
+          if (!(nuevoPrecio > 0)) {
+            mostrarMsgPres('Ingresa un precio válido mayor a 0.', true);
+            input.focus();
+            return;
+          }
+          btnGuardar.disabled = true;
+          try {
+            const r = await postJSON('/admin/presentaciones/editar', {
+              presentacion_id: presId,
+              precio: nuevoPrecio
+            });
+            if (r.ok && r.data.success) {
+              const pres = buscarPresentacion(presId);
+              if (pres) pres.precio = nuevoPrecio;
+              refrescarBadges(medActual);
+              mostrarMsgPres(r.data.mensaje || 'Precio actualizado correctamente.', false);
+            } else {
+              mostrarMsgPres('Error: ' + (r.data.error || 'No se pudo actualizar.'), true);
+            }
+          } catch (err) {
+            mostrarMsgPres('Error de red: ' + err.message, true);
+          }
+          btnGuardar.disabled = false;
+        }
+
+        if (btnDesact) {
+          const pres = buscarPresentacion(presId);
+          if (!window.confirm('¿Desactivar la presentación "' + (pres ? pres.nombre : '#' + presId) + '"?')) return;
+          btnDesact.disabled = true;
+          try {
+            const r = await postJSON('/admin/presentaciones/desactivar', { presentacion_id: presId });
+            if (r.ok && r.data.success) {
+              // Borrado lógico en BD: aquí la sacamos de la caché local.
+              medActual.presentaciones = medActual.presentaciones.filter(function (p) {
+                return Number(p.id) !== presId;
+              });
+              pintarPresentaciones();
+              refrescarBadges(medActual);
+              mostrarMsgPres(r.data.mensaje || 'Presentación desactivada.', false);
+            } else {
+              mostrarMsgPres('Error: ' + (r.data.error || 'No se pudo desactivar.'), true);
+              btnDesact.disabled = false;
+            }
+          } catch (err) {
+            mostrarMsgPres('Error de red: ' + err.message, true);
+            btnDesact.disabled = false;
+          }
+        }
+      });
+
+      // ── Registrar nueva presentación ──
+      document.getElementById('pres-form-nueva').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (!medActual) {
+          mostrarMsgPres('Primero abre un medicamento con el botón Gestionar.', true);
+          return;
+        }
+        const f = e.target;
+        const nombre = document.getElementById('pres-nueva-nombre').value.trim();
+        const factor = Number(document.getElementById('pres-nueva-factor').value);
+        const precio = Number(document.getElementById('pres-nueva-precio').value);
+
+        if (!nombre) { mostrarMsgPres('El nombre de la presentación es obligatorio.', true); return; }
+        if (!(factor >= 1)) { mostrarMsgPres('El factor debe ser mayor o igual a 1.', true); return; }
+        if (!(precio > 0)) { mostrarMsgPres('El precio debe ser mayor a 0.', true); return; }
+
+        const btn = f.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        try {
+          const r = await postJSON('/admin/presentaciones/registrar', {
+            medicamento_id: medActual.id,
+            nombre: nombre,
+            factor_conversion: factor,
+            precio: precio
+          });
+          if (r.ok && r.data.success) {
+            medActual.presentaciones.push({
+              id: r.data.id,
+              nombre: r.data.nombre || nombre,
+              factor_conversion: factor,
+              precio: precio
+            });
+            pintarPresentaciones();
+            refrescarBadges(medActual);
+            f.reset();
+            mostrarMsgPres('Presentación "' + (r.data.nombre || nombre) + '" agregada.', false);
+          } else {
+            mostrarMsgPres('Error: ' + (r.data.error || 'No se pudo registrar la presentación.'), true);
+          }
+        } catch (err) {
+          mostrarMsgPres('Error de red: ' + err.message, true);
+        }
+        btn.disabled = false;
+      });
+    })();
+  </script>
+</body>
+</html>

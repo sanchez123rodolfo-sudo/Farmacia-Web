@@ -1,0 +1,22 @@
+
+=========================================
+        FARMACIA INTERACTIVA S.A.C.       
+        RUC: 20123456789                  
+      BOLETA ELECTRÓNICA       
+=========================================
+Fecha/Hora : 2026-07-25 01:25:37
+Doc. Cliente: 44964728
+-----------------------------------------
+DETALLE DE LA COMPRA:
+Producto    : Paracetamol 500mg
+Componente  : Paracetamol
+Laboratorio : Bayer
+P. Unitario : s/.2.50
+Cantidad    : 2
+-----------------------------------------
+OP. GRAVADA (Subtotal) : s/.4.24
+IGV (18%)              : s/.0.76
+TOTAL A PAGAR          : s/.5.00
+=========================================
+  ¡Gracias por su compra, cuide su salud! 
+=========================================
