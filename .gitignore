@@ -1,0 +1,5 @@
+comprobantes/
+__pycache__/
+*.db
+*.json
+comprobante_*.txt
