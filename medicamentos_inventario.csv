@@ -1,6 +1,0 @@
-id,nombre,categoria,codigo_barras,componente,laboratorio,precio,stock,requiere_receta,ventas_totales,activo,fecha_vencimiento
-5,5 x,,,,,1.0,0,0,0.0,1,
-4,Loratadina,,,Naproxeno,Bayer,3.5,47,0,290.5,1,
-3,Omeprazol 500mg,,,Amoxicilina,Genfar,12.0,45,1,300.0,1,
-2,Ibuprofeno 400mg,,,Ibuprofeno,Pharmagen,3.8,43,1,178.6,1,
-1,Paracetamol 500mg,,7750215469842,Paracetamol,Bayer,2.5,27,0,192.5,1,

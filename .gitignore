@@ -9,3 +9,9 @@ texteo_*.txt
 prueba_json.py
 ordenar_lista.py
 test_*.py
+comprobante_*.txt
+medicamentos_inventario.csv
+agregar_*.py
+agregar_*.sql
+query_db.py
+sunat_service.py
