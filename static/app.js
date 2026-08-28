@@ -44,13 +44,13 @@ async function cargarMedicamentosDesdeBackend() {
         requiere_receta: Boolean(m.requiere_receta),
         codigo_barras: m.codigo_barras || null,
         id: m.id || null,
-        // Presentaciones dinámicas desde BD: [{id, nombre, factor_conversion, precio}]
+        // Presentaciones dinámicas desde BD: [{id, nombre, factor, precio}]
         // La venta por 'Unidad' (factor 1) es implícita y siempre está disponible.
         presentaciones: Array.isArray(m.presentaciones)
           ? m.presentaciones.map((p) => ({
               id: Number(p.id),
               nombre: String(p.nombre),
-              factor_conversion: Math.max(Number(p.factor_conversion) || 1, 1),
+              factor: Math.max(Number(p.factor) || 1, 1),
               precio: Number(p.precio || 0),
             }))
           : [],
@@ -239,7 +239,7 @@ function actualizarItemActivo() {
 
 // ── Utilidades de presentaciones dinámicas ──────────────────────────────
 // El stock SIEMPRE se mide en unidades mínimas (tableta, ml, unidad).
-// Cada presentación define cuántas unidades base contiene (factor_conversion).
+// Cada presentación define cuántas unidades base contiene (factor).
 
 // Devuelve la presentación cuyo id coincide, o null si es venta por unidad.
 function obtenerPresentacion(producto, presentacionId) {
@@ -289,17 +289,26 @@ function renderizarResultados(resultados) {
       const infoPrecios = [
         `<div style="font-size:0.85rem;color:var(--muted);">Unidad: S/ ${precioFormateado}</div>`,
         ...listaPres.map((p) =>
-          `<div style="font-size:0.82rem;color:var(--primary);font-weight:600;">${String(p.nombre).replace(/</g, "&lt;")}: S/ ${Number(p.precio).toFixed(2)} (${p.factor_conversion} uds)</div>`
+          `<div style="font-size:0.82rem;color:var(--primary);font-weight:600;">${String(p.nombre).replace(/</g, "&lt;")}: S/ ${Number(p.precio).toFixed(2)} (${p.factor} uds)</div>`
         ),
       ].join("");
 
-      // Un botón por cada forma de venta. data-pres-id="" = Unidad.
+      // Selector de presentación: "Unidad" (valor "") más las presentaciones
+      // registradas del medicamento (Caja, Blíster...) con su factor y precio.
+      const opcionesPresentacion = [
+        `<option value="">Unidad — S/ ${precioFormateado}</option>`,
+        ...listaPres.map((p) =>
+          `<option value="${p.id}">${String(p.nombre).replace(/</g, "&lt;")} — S/ ${Number(p.precio).toFixed(2)} (${p.factor} uds)</option>`
+        ),
+      ].join("");
+
+      // Select desplegable de presentación + botón único "Agregar".
       const botonesAgregar = `
-        <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;">
-          <button class="add-btn primary-btn" data-index="${index}" data-pres-id="" style="padding:6px 10px;min-height:32px;font-size:0.82rem;">Unidad</button>
-          ${listaPres.map((p) =>
-            `<button class="add-btn secondary-btn" data-index="${index}" data-pres-id="${p.id}" style="padding:6px 10px;min-height:32px;font-size:0.82rem;">${String(p.nombre).replace(/</g, "&lt;")}</button>`
-          ).join("")}
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:stretch;min-width:190px;">
+          <select class="pres-select" data-index="${index}" aria-label="Elegir presentación para ${nombreEscapado}">
+            ${opcionesPresentacion}
+          </select>
+          <button class="add-btn primary-btn" data-index="${index}" style="width:100%;padding:8px 14px;min-height:36px;font-size:0.86rem;">Agregar</button>
         </div>`;
 
       return `
@@ -323,21 +332,20 @@ function renderizarResultados(resultados) {
   resultadosBusqueda.classList.remove("hidden");
   indiceActivoResultado = -1;
 
-  // Attach click listeners to add buttons
+  // Attach click listeners to add buttons: usan la presentación del <select>.
   const addButtons = resultadosBusqueda.querySelectorAll('.add-btn');
   addButtons.forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const idx = Number(btn.dataset.index);
       const med = resultadosActuales[idx];
-      if (med) {
-        // data-pres-id="" (vacío) = venta por Unidad → se pasa null.
-        const presId = btn.dataset.presId !== undefined && btn.dataset.presId !== ""
-          ? Number(btn.dataset.presId)
-          : null;
-        agregarProductoAlCarrito(med.nombre, presId);
-        limpiarResultados();
-      }
+      if (!med) return;
+      const fila = btn.closest('.search-result-item');
+      const selPres = fila ? fila.querySelector('.pres-select') : null;
+      // value="" = Unidad (null); en otro caso, el id de la presentación elegida.
+      const presId = selPres && selPres.value !== "" ? Number(selPres.value) : null;
+      agregarProductoAlCarrito(med.nombre, presId);
+      limpiarResultados();
     });
   });
 }
@@ -376,6 +384,13 @@ function manejarClickResultado(event) {
     return;
   }
 
+  // No secuestrar los clics sobre el <select> ni el botón "Agregar":
+  // el select necesita abrir su lista de opciones sin agregar producto,
+  // y el botón ya se maneja en su propio listener (con stopPropagation).
+  if (event.target.closest(".pres-select, .add-btn")) {
+    return;
+  }
+
   const index = Number(item.dataset.index);
   const medicamentoSeleccionado = resultadosActuales[index];
 
@@ -383,13 +398,11 @@ function manejarClickResultado(event) {
     return;
   }
 
-  // Si se hizo click en un botón de presentación, usar ese formato de venta
-  const tipoVentaBtn = event.target.closest('.add-btn');
-  const presIdBtn = tipoVentaBtn && tipoVentaBtn.dataset.presId !== "" && tipoVentaBtn.dataset.presId !== undefined
-    ? Number(tipoVentaBtn.dataset.presId)
-    : null;
+  // Usa la presentación elegida en el <select> de la fila (Unidad por defecto).
+  const selPres = item.querySelector('.pres-select');
+  const presId = selPres && selPres.value !== "" ? Number(selPres.value) : null;
 
-  agregarProductoAlCarrito(medicamentoSeleccionado.nombre, presIdBtn);
+  agregarProductoAlCarrito(medicamentoSeleccionado.nombre, presId);
   buscadorMedicamentos.value = "";
   busquedaActiva = "";
   limpiarResultados();
@@ -425,7 +438,13 @@ function manejarTecladoBusqueda(event) {
       }
       event.preventDefault();
       const medicamentoSeleccionado = resultadosActuales[indiceActivoResultado];
-      agregarProductoAlCarrito(medicamentoSeleccionado.nombre, null); // Enter = venta por unidad
+      const itemActivo = resultadosBusqueda.querySelector(
+        `.search-result-item[data-index="${indiceActivoResultado}"]`
+      );
+      const selPres = itemActivo ? itemActivo.querySelector('.pres-select') : null;
+      // Enter respeta la presentación elegida en el <select> (Unidad por defecto).
+      const presId = selPres && selPres.value !== "" ? Number(selPres.value) : null;
+      agregarProductoAlCarrito(medicamentoSeleccionado.nombre, presId);
       buscadorMedicamentos.value = "";
       busquedaActiva = "";
       limpiarResultados();
@@ -731,7 +750,7 @@ function agregarProductoAlCarrito(nombre, presentacion_id = null) {
   }
 
   const precio = pres ? Number(pres.precio) : Number(productoInfo.precio || 0);
-  const factor = pres ? Math.max(Number(pres.factor_conversion) || 1, 1) : 1;
+  const factor = pres ? Math.max(Number(pres.factor) || 1, 1) : 1;
   const nombrePres = pres ? pres.nombre : "Unidad";
 
   // Stock efectivo en la presentación elegida: floor(stock_base / factor)

@@ -71,7 +71,7 @@ def medicamento_to_dict(med):
             {
                 "id": int(p["id"]),
                 "nombre": p["nombre"],
-                "factor_conversion": float(p["factor_conversion"]),
+                "factor": float(p["factor"]),
                 "precio": float(p["precio"]),
             }
             for p in (getattr(med, "presentaciones", None) or [])
@@ -235,7 +235,7 @@ def api_ventas():
 
             if presentacion_info:
                 precio = Decimal(str(presentacion_info["precio"]))
-                factor = Decimal(str(presentacion_info["factor_conversion"]))
+                factor = Decimal(str(presentacion_info["factor"]))
                 unidades_a_descontar = int((Decimal(cantidad) * factor).quantize(Decimal("1")))
             else:
                 precio = Decimal(str(med_bd.precio))
@@ -574,22 +574,6 @@ def admin_registrar():
     except Exception:
         return jsonify({"success": False, "error": "precio y stock deben ser numéricos."}), 400
 
-    try:
-        unidades_por_blister = int(data.get("unidades_por_blister") or 1)
-    except Exception:
-        return jsonify({"success": False, "error": "unidades_por_blister debe ser numérico."}), 400
-    if unidades_por_blister < 1:
-        return jsonify({"success": False, "error": "unidades_por_blister debe ser 1 o más."}), 400
-
-    precio_blister = None
-    if data.get("precio_blister") not in (None, ""):
-        try:
-            precio_blister = float(data.get("precio_blister"))
-        except Exception:
-            return jsonify({"success": False, "error": "precio_blister debe ser numérico."}), 400
-        if precio_blister <= 0:
-            return jsonify({"success": False, "error": "El precio del blister debe ser mayor que 0."}), 400
-
     if not nombre:
         return jsonify({"success": False, "error": "El nombre del medicamento es obligatorio."}), 400
     if precio <= 0:
@@ -597,10 +581,46 @@ def admin_registrar():
     if stock < 0:
         return jsonify({"success": False, "error": "El stock no puede ser negativo."}), 400
 
-    ok, resultado = registrar_medicamento_bd(nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
+    # ── Presentación principal (opcional) ──
+    # El medicamento SIEMPRE se registra por unidad mínima. Si el usuario
+    # declara una presentación, se crea vinculada al nuevo medicamento.
+    nombre_presentacion = (data.get("nombre_presentacion") or "").strip()
+    factor_presentacion = None
+    precio_presentacion = None
+    if (nombre_presentacion
+            or data.get("factor_presentacion") not in (None, "")
+            or data.get("precio_presentacion") not in (None, "")):
+        if not nombre_presentacion:
+            return jsonify({"success": False, "error": "Si declaras factor o precio de presentación, el nombre de la presentación es obligatorio."}), 400
+        try:
+            factor_presentacion = float(data.get("factor_presentacion") or 0)
+            precio_presentacion = float(data.get("precio_presentacion") or 0)
+        except Exception:
+            return jsonify({"success": False, "error": "factor y precio de presentación deben ser numéricos."}), 400
+        if factor_presentacion < 1:
+            return jsonify({"success": False, "error": "El factor de la presentación debe ser 1 o más."}), 400
+        if precio_presentacion <= 0:
+            return jsonify({"success": False, "error": "El precio de la presentación debe ser mayor que 0."}), 400
+
+    presentacion_data = None
+    if nombre_presentacion:
+        presentacion_data = {
+            "nombre": nombre_presentacion,
+            "factor": factor_presentacion,
+            "precio": precio_presentacion,
+        }
+
+    # Medicamento + presentación se insertan en UNA misma transacción:
+    # si algo falla, la capa BD hace rollback y no queda nada a medias.
+    ok, resultado = registrar_medicamento_bd(
+        nombre, categoria, componente, laboratorio, precio, stock,
+        requiere_receta, codigo_barras, fecha_vencimiento,
+        presentacion=presentacion_data,
+    )
     if not ok:
         # Ej: nombre duplicado (clave única) u otro error de MySQL.
         return jsonify({"success": False, "error": resultado}), 400
+
     return jsonify({"success": True, "id": resultado, "nombre": nombre}), 201
 
 
@@ -741,7 +761,7 @@ def admin_descontinuar():
 @app.route("/admin/presentaciones/registrar", methods=["POST"])
 def admin_presentacion_registrar():
     """Crea una nueva presentación de venta para un medicamento.
-    Body: {medicamento_id, nombre, factor_conversion, precio}."""
+    Body: {medicamento_id, nombre, factor, precio}."""
     if not session.get("usuario"):
         return jsonify({"success": False, "error": "No autorizado"}), 401
 
@@ -760,10 +780,10 @@ def admin_presentacion_registrar():
 
     # Validación de tipos; los rangos (factor>=1, precio>0) los valida la capa BD.
     try:
-        factor = float(data.get("factor_conversion") or 0)
+        factor = float(data.get("factor") or 0)
         precio = float(data.get("precio") or 0)
     except Exception:
-        return jsonify({"success": False, "error": "factor_conversion y precio deben ser numéricos."}), 400
+        return jsonify({"success": False, "error": "factor y precio deben ser numéricos."}), 400
 
     ok, resultado = registrar_presentacion_bd(medicamento_id, nombre, factor, precio)
     if not ok:
@@ -775,7 +795,7 @@ def admin_presentacion_registrar():
 def admin_presentacion_editar():
     """Actualiza factor y/o precio de una presentación existente.
     Solo se modifican los campos enviados; el resto queda intacto.
-    Body: {presentacion_id, factor_conversion?, precio?}."""
+    Body: {presentacion_id, factor?, precio?}."""
     if not session.get("usuario"):
         return jsonify({"success": False, "error": "No autorizado"}), 401
 
@@ -790,11 +810,11 @@ def admin_presentacion_editar():
 
     factor_valor = None
     precio_valor = None
-    if data.get("factor_conversion") not in (None, ""):
+    if data.get("factor") not in (None, ""):
         try:
-            factor_valor = float(data.get("factor_conversion"))
+            factor_valor = float(data.get("factor"))
         except Exception:
-            return jsonify({"success": False, "error": "factor_conversion debe ser numérico."}), 400
+            return jsonify({"success": False, "error": "factor debe ser numérico."}), 400
     if data.get("precio") not in (None, ""):
         try:
             precio_valor = float(data.get("precio"))
@@ -802,7 +822,7 @@ def admin_presentacion_editar():
             return jsonify({"success": False, "error": "precio debe ser numérico."}), 400
 
     if factor_valor is None and precio_valor is None:
-        return jsonify({"success": False, "error": "Envía al menos 'factor_conversion' o 'precio' para actualizar."}), 400
+        return jsonify({"success": False, "error": "Envía al menos 'factor' o 'precio' para actualizar."}), 400
 
     ok, mensaje = editar_presentacion_bd(presentacion_id, factor_valor, precio_valor)
     if not ok:

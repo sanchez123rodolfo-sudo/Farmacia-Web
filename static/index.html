@@ -349,6 +349,27 @@
       font-size: 0.98rem;
     }
 
+    .pres-select {
+      width: 100%;
+      min-width: 190px;
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      border-radius: 12px;
+      padding: 9px 12px;
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: #0f172a;
+      background: var(--surface-soft);
+      cursor: pointer;
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    .pres-select:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #ffffff;
+      box-shadow: var(--focus);
+    }
+
     .search-result-meta {
       color: var(--secondary);
       font-size: 0.92rem;

@@ -38,7 +38,7 @@ SET foreign_key_checks = 0;
 -- El stock SIEMPRE se mide en unidades minimas (tableta,
 -- mililitro, gramo, unidad). Las presentaciones (Caja,
 -- Blister, Frasco) convierten sus cantidades a unidades
--- base usando factor_conversion en la tabla presentaciones.
+-- base usando factor en la tabla presentaciones.
 -- =========================================================
 CREATE TABLE IF NOT EXISTS `medicamentos` (
     `id`                    INT             AUTO_INCREMENT PRIMARY KEY,
@@ -74,9 +74,9 @@ CREATE TABLE IF NOT EXISTS `medicamentos` (
 -- =========================================================
 -- Formas de venta para cada medicamento (Caja, Blister,
 -- Frasco, Tubo, etc.). Cada presentacion declara cuantas
--- unidades base contiene (factor_conversion) y su precio.
+-- unidades base contiene (factor) y su precio.
 --
--- Al vender: unidades_a_descontar = cantidad * factor_conversion
+-- Al vender: unidades_a_descontar = cantidad * factor
 -- Ejemplo: 2 Cajas x factor 30 = -60 tabletas del stock.
 -- =========================================================
 CREATE TABLE IF NOT EXISTS `presentaciones` (
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS `presentaciones` (
     `medicamento_id`    INT             NOT NULL,
     `nombre`            VARCHAR(50)     NOT NULL
                         COMMENT 'Etiqueta visible en el POS: Caja, Blister, Frasco...',
-    `factor_conversion` DECIMAL(10,2)   NOT NULL DEFAULT 1
+    `factor`            DECIMAL(10,2)   NOT NULL DEFAULT 1
                         COMMENT 'Unidades base que contiene esta presentacion',
     `precio`            DECIMAL(10,2)   NOT NULL
                         COMMENT 'Precio de venta por esta presentacion',
@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS `comprobantes` (
 -- 6. TABLA: detalle_comprobantes
 -- =========================================================
 -- Linea por linea de cada comprobante. Guarda copia del
--- precio, presentacion y factor_conversion para preservar
+-- precio, presentacion y factor para preservar
 -- la integridad historica aunque el producto cambie de
 -- precio o se desactive una presentacion.
 -- =========================================================
@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS `detalle_comprobantes` (
                             COMMENT 'FK -> presentaciones.id (NULL = venta por unidad)',
     `presentacion_nombre`   VARCHAR(50)     NULL
                             COMMENT 'Copia del nombre de la presentacion (auditoria)',
-    `factor_conversion`     DECIMAL(10,2)   NULL
+    `factor`            DECIMAL(10,2)   NULL
                             COMMENT 'Copia del factor al momento de la venta (auditoria)',
 
     INDEX `idx_comprobante` (`comprobante_id`),

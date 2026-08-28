@@ -103,7 +103,7 @@ class Medicamento:
         # Identificador en BD (para vincular presentaciones).
         self.id = id
         # Presentaciones dinámicas: lista de dicts
-        # [{"id": int, "nombre": str, "factor_conversion": float, "precio": float}, ...]
+        # [{"id": int, "nombre": str, "factor": float, "precio": float}, ...]
         # La venta por 'Unidad' es implícita: factor 1 y precio = self.precio.
         self.presentaciones = presentaciones or []
         
@@ -368,15 +368,15 @@ def listar_medicamentos_bd():
             # se entrega lista vacía sin romper el panel.
             try:
                 cursor.execute(
-                    "SELECT id, medicamento_id, nombre, factor_conversion, precio "
-                    "FROM presentaciones WHERE activo = 1 ORDER BY factor_conversion"
+                    "SELECT id, medicamento_id, nombre, factor, precio "
+                    "FROM presentaciones WHERE activo = 1 ORDER BY factor"
                 )
                 pres_por_med = {}
                 for p in cursor.fetchall():
                     pres_por_med.setdefault(int(p[1]), []).append({
                         "id": int(p[0]),
                         "nombre": str(p[2]),
-                        "factor_conversion": float(p[3]),
+                        "factor": float(p[3]),
                         "precio": float(p[4]),
                     })
                 for med in medicamentos:
@@ -396,7 +396,7 @@ def listar_medicamentos_bd():
 # =========================================================
 # PRESENTACIONES DINÁMICAS (factores de conversión)
 # El stock siempre se mide en unidades mínimas; cada presentación
-# declara cuántas unidades base contiene (factor_conversion).
+# declara cuántas unidades base contiene (factor).
 # =========================================================
 def listar_presentaciones_bd(medicamento_id=None, solo_activas=True):
     """Lista presentaciones: de todos los medicamentos o filtradas por uno.
@@ -406,7 +406,7 @@ def listar_presentaciones_bd(medicamento_id=None, solo_activas=True):
         raise RuntimeError("No se pudo conectar a la base de datos.")
     try:
         with conexion.cursor() as cursor:
-            sql = ("SELECT id, medicamento_id, nombre, factor_conversion, precio, activo "
+            sql = ("SELECT id, medicamento_id, nombre, factor, precio, activo "
                    "FROM presentaciones")
             condiciones = []
             params = []
@@ -417,14 +417,14 @@ def listar_presentaciones_bd(medicamento_id=None, solo_activas=True):
                 condiciones.append("activo = 1")
             if condiciones:
                 sql += " WHERE " + " AND ".join(condiciones)
-            sql += " ORDER BY factor_conversion"
+            sql += " ORDER BY factor"
             cursor.execute(sql, tuple(params))
             return [
                 {
                     "id": int(f[0]),
                     "medicamento_id": int(f[1]),
                     "nombre": str(f[2]),
-                    "factor_conversion": float(f[3]),
+                    "factor": float(f[3]),
                     "precio": float(f[4]),
                     "activo": bool(f[5]),
                 }
@@ -437,7 +437,7 @@ def listar_presentaciones_bd(medicamento_id=None, solo_activas=True):
         conexion.close()
 
 
-def registrar_presentacion_bd(medicamento_id, nombre, factor_conversion, precio):
+def registrar_presentacion_bd(medicamento_id, nombre, factor, precio):
     """Crea una nueva forma de venta para un medicamento.
     Devuelve (True, nuevo_id) en éxito o (False, mensaje_error)."""
     # ── Validaciones antes de tocar la BD ──
@@ -453,10 +453,10 @@ def registrar_presentacion_bd(medicamento_id, nombre, factor_conversion, precio)
         return False, "El nombre no puede exceder los 50 caracteres."
 
     try:
-        factor = Decimal(str(factor_conversion))
+        factor_dec = Decimal(str(factor))
     except Exception:
-        return False, "El factor de conversión debe ser numérico."
-    if factor < 1:
+        return False, "El factor debe ser numérico."
+    if factor_dec < 1:
         return False, "El factor debe ser 1 o más (unidades base que contiene)."
 
     try:
@@ -480,13 +480,13 @@ def registrar_presentacion_bd(medicamento_id, nombre, factor_conversion, precio)
                 return False, "El medicamento está descontinuado: no admite nuevas presentaciones."
 
             cursor.execute(
-                "INSERT INTO presentaciones (medicamento_id, nombre, factor_conversion, precio) "
+                "INSERT INTO presentaciones (medicamento_id, nombre, factor, precio) "
                 "VALUES (%s, %s, %s, %s)",
-                (medicamento_id, nombre, float(factor), float(precio_dec))
+                (medicamento_id, nombre, float(factor_dec), float(precio_dec))
             )
             nuevo_id = cursor.lastrowid
         conexion.commit()
-        print(f"✅ Presentación '{nombre}' (x{factor}) registrada para medicamento id={medicamento_id}.")
+        print(f"✅ Presentación '{nombre}' (x{factor_dec}) registrada para medicamento id={medicamento_id}.")
         return True, nuevo_id
     except pymysql.err.IntegrityError as e_dup:
         # Clave UNIQUE (medicamento_id, nombre): no repetir nombres por producto.
@@ -501,7 +501,7 @@ def registrar_presentacion_bd(medicamento_id, nombre, factor_conversion, precio)
         conexion.close()
 
 
-def editar_presentacion_bd(presentacion_id, factor_conversion=None, precio=None):
+def editar_presentacion_bd(presentacion_id, factor=None, precio=None):
     """Actualiza el factor y/o el precio de una presentación existente.
     Solo envía los campos que quieras cambiar; el resto queda intacto.
     Devuelve (True, mensaje) o (False, mensaje_error)."""
@@ -513,15 +513,15 @@ def editar_presentacion_bd(presentacion_id, factor_conversion=None, precio=None)
     campos_sql = []
     params = []
 
-    if factor_conversion is not None:
+    if factor is not None:
         try:
-            factor = Decimal(str(factor_conversion))
+            factor_dec = Decimal(str(factor))
         except Exception:
-            return False, "El factor de conversión debe ser numérico."
-        if factor < 1:
+            return False, "El factor debe ser numérico."
+        if factor_dec < 1:
             return False, "El factor debe ser 1 o más."
-        campos_sql.append("factor_conversion = %s")
-        params.append(float(factor))
+        campos_sql.append("factor = %s")
+        params.append(float(factor_dec))
 
     if precio is not None:
         try:
@@ -542,17 +542,24 @@ def editar_presentacion_bd(presentacion_id, factor_conversion=None, precio=None)
         return False, "No se pudo conectar a la base de datos."
     try:
         with conexion.cursor() as cursor:
+            # Verificar existencia ANTES de actualizar. MySQL reporta rowcount=0
+            # cuando el UPDATE no cambia valores reales (aunque la fila exista),
+            # por lo que NO se debe usar rowcount para detectar "no existe":
+            # guardar un precio sin modificarlo disparaba el falso error
+            # "No existe la presentación con id N".
+            cursor.execute("SELECT id FROM presentaciones WHERE id = %s", (presentacion_id,))
+            if cursor.fetchone() is None:
+                return False, f"No existe la presentación con id {presentacion_id}."
+
             cursor.execute(
                 f"UPDATE presentaciones SET {', '.join(campos_sql)} WHERE id = %s",
                 tuple(params)
             )
-            afectadas = cursor.rowcount
         conexion.commit()
-        if afectadas == 0:
-            return False, f"No existe la presentación con id {presentacion_id}."
         print(f"✅ Presentación id={presentacion_id} actualizada.")
         return True, "Presentación actualizada correctamente."
     except Exception as e:
+        conexion.rollback()
         print(f"❌ Error al editar presentación: {e}")
         return False, f"Error al editar la presentación: {e}"
     finally:
@@ -574,23 +581,31 @@ def desactivar_presentacion_bd(presentacion_id):
         return False, "No se pudo conectar a la base de datos."
     try:
         with conexion.cursor() as cursor:
+            # Verificar existencia antes de desactivar (no depender de rowcount:
+            # si la presentación ya está inactiva, MySQL reporta 0 filas).
+            cursor.execute("SELECT id FROM presentaciones WHERE id = %s", (presentacion_id,))
+            if cursor.fetchone() is None:
+                return False, f"No existe la presentación con id {presentacion_id}."
+
             cursor.execute("UPDATE presentaciones SET activo = 0 WHERE id = %s", (presentacion_id,))
-            afectadas = cursor.rowcount
         conexion.commit()
-        if afectadas == 0:
-            return False, f"No existe la presentación con id {presentacion_id}."
         print(f"✅ Presentación id={presentacion_id} desactivada (borrado lógico).")
         return True, "Presentación desactivada correctamente."
     except Exception as e:
+        conexion.rollback()
         print(f"❌ Error al desactivar presentación: {e}")
         return False, f"Error al desactivar la presentación: {e}"
     finally:
         conexion.close()
 
 
-def registrar_medicamento_bd(nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras=None, fecha_vencimiento=None, unidades_por_blister=1, precio_blister=None):
-    """Inserta un nuevo medicamento en MySQL.
-    Devuelve (True, nuevo_id) en éxito o (False, mensaje_error)."""
+def registrar_medicamento_bd(nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras=None, fecha_vencimiento=None, unidades_por_blister=1, precio_blister=None, presentacion=None):
+    """Inserta un nuevo medicamento en MySQL y, si se indica, su presentación
+    principal, TODO dentro de una misma transacción.
+
+    presentacion: dict opcional {'nombre': str, 'factor': numero, 'precio': numero}.
+    Devuelve (True, nuevo_id) en éxito o (False, mensaje_error).
+    Si falla cualquiera de los INSERT, se hace rollback: no queda nada a medias."""
     conexion = conectar_bd()
     if not conexion:
         return False, "No se pudo conectar a la base de datos."
@@ -607,13 +622,38 @@ def registrar_medicamento_bd(nombre, categoria, componente, laboratorio, precio,
                 (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
             )
             nuevo_id = cursor.lastrowid
+
+            if presentacion:
+                p_nombre = (presentacion.get("nombre") or "").strip()
+                p_factor = Decimal(str(presentacion.get("factor") or 0))
+                p_precio = Decimal(str(presentacion.get("precio") or 0))
+
+                if not p_nombre:
+                    raise ValueError("El nombre de la presentación es obligatorio.")
+                if len(p_nombre) > 50:
+                    raise ValueError("El nombre de la presentación no puede exceder los 50 caracteres.")
+                if p_factor < 1:
+                    raise ValueError("El factor de la presentación debe ser 1 o más.")
+                if p_precio <= 0:
+                    raise ValueError("El precio de la presentación debe ser mayor que 0.")
+
+                cursor.execute(
+                    "INSERT INTO presentaciones (medicamento_id, nombre, factor, precio) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (nuevo_id, p_nombre, float(p_factor), float(p_precio))
+                )
+
+        # Un único commit: medicamento + presentación se guardan juntos.
         conexion.commit()
         return True, nuevo_id
+    except ValueError as e:
+        conexion.rollback()
+        return False, str(e)
     except pymysql.err.IntegrityError as e_int:
         conexion.rollback()
         if e_int.args and e_int.args[0] == 1062:
             # Entrada duplicada: mensaje amigable (no filtra detalles de MySQL).
-            return False, "Ya existe un medicamento con ese nombre."
+            return False, "Ya existe un medicamento con ese nombre o una presentación con ese nombre para él."
         print(f"❌ Error SQL al registrar medicamento: {e_int}")
         return False, "Error de base de datos al registrar el medicamento."
     except Exception as e:
@@ -1132,7 +1172,7 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 presentacion_id = None
                 if presentacion:
                     cursor.execute(
-                        "SELECT id, nombre, factor_conversion, precio "
+                        "SELECT id, nombre, factor, precio "
                         "FROM presentaciones WHERE id = %s AND medicamento_id = %s AND activo = 1",
                         (presentacion.get("id"), medicamento_id)
                     )
@@ -1163,7 +1203,7 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 cursor.execute(
                     "INSERT INTO detalle_comprobantes "
                     "(comprobante_id, medicamento_id, cantidad, precio_unitario, subtotal_linea, "
-                    "presentacion_id, presentacion_nombre, factor_conversion) "
+                    "presentacion_id, presentacion_nombre, factor) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         comprobante_id, medicamento_id, item["cantidad"], float(precio_a_cobrar), subtotal_real,
@@ -1350,14 +1390,14 @@ def cargar_medicamentos_bd():
             presentaciones_por_med = {}
             try:
                 cursor.execute(
-                    "SELECT id, medicamento_id, nombre, factor_conversion, precio "
-                    "FROM presentaciones WHERE activo = 1 ORDER BY factor_conversion"
+                    "SELECT id, medicamento_id, nombre, factor, precio "
+                    "FROM presentaciones WHERE activo = 1 ORDER BY factor"
                 )
                 for p in cursor.fetchall():
                     presentaciones_por_med.setdefault(int(p[1]), []).append({
                         "id": int(p[0]),
                         "nombre": str(p[2]),
-                        "factor_conversion": float(p[3]),
+                        "factor": float(p[3]),
                         "precio": float(p[4]),
                     })
             except Exception as e_pres:

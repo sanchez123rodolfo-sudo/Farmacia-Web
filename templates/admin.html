@@ -706,7 +706,7 @@
                     <td>
                       {% if med.presentaciones %}
                         {% for pres in med.presentaciones %}
-                          <span class="pres-badge" title="Factor: {{ pres.factor_conversion }} uds base — S/ {{ '%.2f'|format(pres.precio) }}">{{ pres.nombre }} ×{{ "%.0f"|format(pres.factor_conversion) }}</span>
+                          <span class="pres-badge" title="Factor: {{ pres.factor }} uds base — S/ {{ '%.2f'|format(pres.precio) }}">{{ pres.nombre }} ×{{ "%.0f"|format(pres.factor) }}</span>
                         {% endfor %}
                       {% else %}
                         <span class="pres-vacio">Solo unidad</span>
@@ -919,11 +919,20 @@
           <label>Precio (S/)
             <input type="number" name="precio" min="0.01" step="0.01" placeholder="15.50" required />
           </label>
-          <label>Precio Blíster (S/)
-            <input type="number" name="precio_blister" min="0.01" step="0.01" placeholder="Ej: 45.00 (opcional)" />
+          <div style="grid-column: 1 / -1; margin-top: 4px;">
+            <h3 style="margin: 0 0 2px; font-size: 1rem; color: #0f172a;">Presentación principal (opcional)</h3>
+            <p style="margin: 0 0 12px; font-size: 0.85rem; color: var(--muted);">
+              Si la declaras, se vincula al medicamento y aparecerá en el POS además de la venta por unidad mínima.
+            </p>
+          </div>
+          <label>Nombre de presentación
+            <input type="text" name="nombre_presentacion" placeholder="Ej: Caja x 30, Blíster, Frasco 120ml" />
           </label>
-          <label>Unidades por Blíster
-            <input type="number" name="unidades_por_blister" min="1" step="1" value="1" placeholder="Ej: 10" />
+          <label>Factor (unidades que contiene)
+            <input type="number" name="factor_presentacion" min="1" step="1" placeholder="Ej: 30" />
+          </label>
+          <label>Precio de presentación (S/)
+            <input type="number" name="precio_presentacion" min="0.01" step="0.01" placeholder="Ej: 45.00" />
           </label>
           <label>Stock inicial
             <input type="number" name="stock" min="0" step="1" placeholder="20" required />
@@ -1545,8 +1554,9 @@
         stock: Number(f.stock.value),
         requiere_receta: f.requiere_receta.checked,
         fecha_vencimiento: f.fecha_vencimiento.value || null,
-        unidades_por_blister: Number(f.unidades_por_blister.value) || 1,
-        precio_blister: f.precio_blister.value ? Number(f.precio_blister.value) : null,
+        nombre_presentacion: f.nombre_presentacion.value.trim(),
+        factor_presentacion: f.factor_presentacion.value ? Number(f.factor_presentacion.value) : null,
+        precio_presentacion: f.precio_presentacion.value ? Number(f.precio_presentacion.value) : null,
       };
       const btn = f.querySelector('button[type="submit"]');
       btn.disabled = true;
@@ -1559,7 +1569,10 @@
         });
         const data = await resp.json();
         if (resp.ok && data.success) {
-          mostrarMsg('Medicamento "' + data.nombre + '" registrado con exito.');
+          const mensajePres = payload.nombre_presentacion
+            ? ' y presentación "' + payload.nombre_presentacion + '"'
+            : '';
+          mostrarMsg('Medicamento "' + data.nombre + '" registrado con exito' + mensajePres + '.');
           setTimeout(function () { location.reload(); }, 700);
         } else {
           mostrarMsg('Error: ' + (data.error || 'No se pudo registrar.'), true);
@@ -1654,7 +1667,7 @@
        .btn-pres-guardar, .btn-pres-desactivar y el modal genérico). -->
   <script>
     // Objeto GLOBAL inyectado por Flask (ruta admin(): meds_data_json).
-    // Estructura: [{id, nombre, precio, stock, presentaciones: [{id, nombre, factor_conversion, precio}]}]
+    // Estructura: [{id, nombre, precio, stock, presentaciones: [{id, nombre, factor, precio}]}]
     window.MEDICAMENTOS_DATA = {{ meds_data_json | safe }};
 
     (function () {
@@ -1717,7 +1730,7 @@
           fila.className = 'pres-fila';
           fila.innerHTML =
             '<span class="pres-nombre">' + esc(p.nombre) + '</span>' +
-            '<span class="pres-factor">×' + Number(p.factor_conversion) + ' uds base</span>' +
+            '<span class="pres-factor">×' + Number(p.factor) + ' uds base</span>' +
             '<input type="number" class="pres-input" min="0.01" step="0.01" value="' + Number(p.precio).toFixed(2) + '" aria-label="Precio de ' + esc(p.nombre) + '" />' +
             '<button type="button" class="btn-pres-guardar" data-id="' + p.id + '">Guardar</button>' +
             '<button type="button" class="btn-pres-desactivar" data-id="' + p.id + '">Desactivar</button>';
@@ -1734,8 +1747,8 @@
         med.presentaciones.forEach(function (p) {
           const span = document.createElement('span');
           span.className = 'pres-badge';
-          span.title = 'Factor: ' + p.factor_conversion + ' uds base — S/ ' + Number(p.precio).toFixed(2);
-          span.textContent = p.nombre + ' ×' + Math.round(Number(p.factor_conversion));
+          span.title = 'Factor: ' + p.factor + ' uds base — S/ ' + Number(p.precio).toFixed(2);
+          span.textContent = p.nombre + ' ×' + Math.round(Number(p.factor));
           frag.appendChild(span);
         });
         if (!med.presentaciones.length) {
@@ -1873,14 +1886,14 @@
           const r = await postJSON('/admin/presentaciones/registrar', {
             medicamento_id: medActual.id,
             nombre: nombre,
-            factor_conversion: factor,
+            factor: factor,
             precio: precio
           });
           if (r.ok && r.data.success) {
             medActual.presentaciones.push({
               id: r.data.id,
               nombre: r.data.nombre || nombre,
-              factor_conversion: factor,
+              factor: factor,
               precio: precio
             });
             pintarPresentaciones();
