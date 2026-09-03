@@ -25,6 +25,7 @@ from Practica_POO_Farmacia import (
     consultar_alertas_bd,
     listar_ventas_bd,
     listar_clientes_bd,
+    listar_productos_mas_vendidos_bd,
     importar_medicamentos_csv_bd,
     Medicamento,
 )
@@ -566,13 +567,18 @@ def admin_registrar():
     laboratorio = (data.get("laboratorio") or "").strip()
     codigo_barras = (data.get("codigo_barras") or "").strip() or None
     requiere_receta = _flag_bool(data.get("requiere_receta"))
-    fecha_vencimiento = (data.get("fecha_vencimiento") or "").strip() or None
+    fecha_vencimiento = (data.get("fecha_vencimiento") or "").strip()
 
+    if data.get("stock") in (None, ""):
+        return jsonify({"success": False, "error": "El stock es obligatorio."}), 400
     try:
         precio = float(data.get("precio") or 0)
-        stock = int(data.get("stock") or 0)
+        stock = int(data.get("stock"))
     except Exception:
         return jsonify({"success": False, "error": "precio y stock deben ser numéricos."}), 400
+
+    if not fecha_vencimiento:
+        return jsonify({"success": False, "error": "La fecha de vencimiento es obligatoria."}), 400
 
     if not nombre:
         return jsonify({"success": False, "error": "El nombre del medicamento es obligatorio."}), 400
@@ -917,6 +923,27 @@ def admin_clientes():
         print(f"[admin_clientes] {type(e).__name__}: {e}")
         return jsonify({"success": False, "error": "Servicio no disponible: no se pudo conectar a la base de datos."}), 503
     return jsonify({"success": True, "clientes": clientes}), 200
+
+
+@app.route("/admin/productos-mas-vendidos", methods=["GET"])
+def admin_productos_mas_vendidos():
+    """Top de productos más vendidos (mayor rotación de salida).
+    Parámetro opcional: limite (default 5, máximo 20)."""
+    if not session.get("usuario"):
+        return jsonify({"success": False, "error": "No autorizado"}), 401
+
+    try:
+        limite = int(request.args.get("limite", 5))
+    except Exception:
+        limite = 5
+    limite = max(1, min(limite, 20))
+
+    try:
+        ranking = listar_productos_mas_vendidos_bd(limite=limite)
+    except Exception as e:
+        print(f"[admin_productos_mas_vendidos] {type(e).__name__}: {e}")
+        return jsonify({"success": False, "error": "Servicio no disponible: no se pudo conectar a la base de datos."}), 503
+    return jsonify({"success": True, "productos": ranking}), 200
 
 
 # ── Endpoints para comprobantes pendientes/rechazados por SUNAT ──

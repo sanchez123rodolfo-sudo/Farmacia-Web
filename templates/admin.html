@@ -121,6 +121,51 @@
 
     .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 16px; }
 
+    /* ── Productos Más Vendidos (tarjeta superior de Comprobantes) ── */
+    .panel-top-vendidos {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, #f8fafc, #eef4ff);
+      padding: 18px 20px;
+      margin-bottom: 24px;
+    }
+    .panel-top-vendidos h2 { margin: 0 0 6px; font-size: 1.1rem; color: #0f172a; display: flex; align-items: center; gap: 8px; }
+
+    .top-vendidos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .top-vendido-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .top-vendido-card .tv-pos {
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--primary);
+    }
+    .top-vendido-card .tv-nombre {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .top-vendido-card .tv-num {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: var(--secondary);
+    }
+    .top-vendido-card .tv-num strong { color: #0f172a; }
+
     /* ── Tablas: scroll horizontal sin romper el layout ── */
     .table-wrapper { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); -webkit-overflow-scrolling: touch; }
 
@@ -667,8 +712,8 @@
     <!-- ═══════════ PESTAÑAS: TABLAS PRINCIPALES ═══════════ -->
     <nav class="tabs" role="tablist" aria-label="Tablas principales">
       <button class="tab-btn active" data-tab="inventario" role="tab" aria-selected="true" aria-controls="tab-inventario" type="button">Inventario de Medicamentos</button>
-      <button class="tab-btn" data-tab="historial" role="tab" aria-selected="false" aria-controls="tab-historial" type="button">Historial de Ventas</button>
       <button class="tab-btn" data-tab="clientes" role="tab" aria-selected="false" aria-controls="tab-clientes" type="button">Clientes</button>
+      <button class="tab-btn" data-tab="topventas" role="tab" aria-selected="false" aria-controls="tab-topventas" type="button">Productos Más Vendidos</button>
       <button class="tab-btn" data-tab="comprobantes" role="tab" aria-selected="false" aria-controls="tab-comprobantes" type="button">Comprobantes</button>
     </nav>
 
@@ -802,6 +847,20 @@
       </div>
     </section>
 
+    <!-- ── Pestaña: Productos Más Vendidos ── -->
+    <section id="tab-topventas" class="tab-panel" role="tabpanel">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Productos Más Vendidos</h2>
+          <button id="btn-refrescar-topventas" class="btn-back" type="button">Actualizar</button>
+        </div>
+        <p class="hint">Top 5 medicamentos con mayor rotación de salida.</p>
+        <div id="top-vendidos" class="top-vendidos-grid">
+          <p class="empty">Cargando productos más vendidos...</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ── Pestaña: Comprobantes ── -->
     <section id="tab-comprobantes" class="tab-panel" role="tabpanel">
       <div class="panel">
@@ -907,17 +966,34 @@
           <label>Código de barras
             <input type="text" name="codigo_barras" placeholder="Ej: 7751034036505" />
           </label>
+          <label>Precio <small>(unitario)</small>
+            <input type="number" name="precio" min="0.01" step="0.01" placeholder="15.50" required />
+          </label>
+          <label>Stock <small>(inicial)</small>
+            <input type="number" name="stock" min="0" step="1" placeholder="20" required />
+          </label>
+          <label>Fecha de vencimiento
+            <input type="date" name="fecha_vencimiento" required />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" name="requiere_receta" required />
+            Requiere receta médica
+          </label>
+        </div>
+
+        <div style="grid-column: 1 / -1; margin-top: 8px;">
+          <h3 style="margin: 0 0 12px; font-size: 1rem; color: #0f172a;">Datos opcionales</h3>
+        </div>
+
+        <div class="form-grid">
           <label>Categoría
             <input type="text" name="categoria" placeholder="Ej: Analgésico" />
-          </label>
-          <label>Componente genérico
-            <input type="text" name="componente" placeholder="Ej: Naproxeno" />
           </label>
           <label>Laboratorio
             <input type="text" name="laboratorio" placeholder="Ej: Bayer" />
           </label>
-          <label>Precio (S/)
-            <input type="number" name="precio" min="0.01" step="0.01" placeholder="15.50" required />
+          <label>Componente genérico
+            <input type="text" name="componente" placeholder="Ej: Naproxeno" />
           </label>
           <div style="grid-column: 1 / -1; margin-top: 4px;">
             <h3 style="margin: 0 0 2px; font-size: 1rem; color: #0f172a;">Presentación principal (opcional)</h3>
@@ -933,16 +1009,6 @@
           </label>
           <label>Precio de presentación (S/)
             <input type="number" name="precio_presentacion" min="0.01" step="0.01" placeholder="Ej: 45.00" />
-          </label>
-          <label>Stock inicial
-            <input type="number" name="stock" min="0" step="1" placeholder="20" required />
-          </label>
-          <label>Fecha de vencimiento
-            <input type="date" name="fecha_vencimiento" />
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" name="requiere_receta" />
-            Requiere receta médica
           </label>
         </div>
         <button type="submit" class="primary-btn">Registrar Medicamento</button>
@@ -997,16 +1063,17 @@
             </thead>
             <tbody>
               <tr><td style="padding:6px 10px;"><code>nombre</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">Paracetamol 500mg</td><td style="padding:6px 10px;">Nombre comercial del medicamento</td></tr>
-              <tr><td style="padding:6px 10px;"><code>stock</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">100</td><td style="padding:6px 10px;">Unidades disponibles (entero)</td></tr>
-              <tr><td style="padding:6px 10px;"><code>precio</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">12.50</td><td style="padding:6px 10px;">Precio unitario en soles</td></tr>
-              <tr><td style="padding:6px 10px;"><code>categoria</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Analgésico</td><td style="padding:6px 10px;">Categoría terapéutica</td></tr>
-              <tr><td style="padding:6px 10px;"><code>componente</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Paracetamol</td><td style="padding:6px 10px;">Componente genérico</td></tr>
-              <tr><td style="padding:6px 10px;"><code>laboratorio</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Bayer</td><td style="padding:6px 10px;">Nombre del laboratorio</td></tr>
               <tr><td style="padding:6px 10px;"><code>codigo_barras</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">7751000000001</td><td style="padding:6px 10px;">Código EAN-13</td></tr>
-              <tr><td style="padding:6px 10px;"><code>requiere_receta</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">true / false</td><td style="padding:6px 10px;">Si es true, 1, si o sí</td></tr>
-              <tr><td style="padding:6px 10px;"><code>fecha_vencimiento</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">2027-06-30</td><td style="padding:6px 10px;">Formato AAAA-MM-DD</td></tr>
-              <tr><td style="padding:6px 10px;"><code>unidades_por_blister</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">10</td><td style="padding:6px 10px;">Cuántas pastillas tiene un blíster (default: 1)</td></tr>
-              <tr><td style="padding:6px 10px;"><code>precio_blister</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">45.00</td><td style="padding:6px 10px;">Precio con descuento por el blíster completo</td></tr>
+              <tr><td style="padding:6px 10px;"><code>precio</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">12.50</td><td style="padding:6px 10px;">Precio unitario en soles</td></tr>
+              <tr><td style="padding:6px 10px;"><code>stock</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">100</td><td style="padding:6px 10px;">Unidades disponibles (entero)</td></tr>
+              <tr><td style="padding:6px 10px;"><code>fecha_vencimiento</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">2027-06-30</td><td style="padding:6px 10px;">Formato AAAA-MM-DD</td></tr>
+              <tr><td style="padding:6px 10px;"><code>requiere_receta</code></td><td style="padding:6px 10px;">Sí</td><td style="padding:6px 10px;">true / false</td><td style="padding:6px 10px;">true / false, 1 o 0</td></tr>
+              <tr><td style="padding:6px 10px;"><code>categoria</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Analgésico</td><td style="padding:6px 10px;">Categoría terapéutica</td></tr>
+              <tr><td style="padding:6px 10px;"><code>laboratorio</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Bayer</td><td style="padding:6px 10px;">Nombre del laboratorio</td></tr>
+              <tr><td style="padding:6px 10px;"><code>componente_generico</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Paracetamol</td><td style="padding:6px 10px;">Componente genérico</td></tr>
+              <tr><td style="padding:6px 10px;"><code>nombre_presentacion</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">Caja x 30, Blíster</td><td style="padding:6px 10px;">Ej. Caja x 30, Blíster</td></tr>
+              <tr><td style="padding:6px 10px;"><code>factor</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">30</td><td style="padding:6px 10px;">Unidades que contiene la presentación</td></tr>
+              <tr><td style="padding:6px 10px;"><code>precio_presentacion</code></td><td style="padding:6px 10px;">No</td><td style="padding:6px 10px;">45.00</td><td style="padding:6px 10px;">Precio de la presentación</td></tr>
             </tbody>
           </table>
         </div>
@@ -1135,6 +1202,7 @@
     const cargadoresTab = {
       historial: cargarHistorial,
       clientes: cargarClientes,
+      topventas: cargarTopVendidos,
       comprobantes: cargarComprobantes,
     };
 
@@ -1217,6 +1285,38 @@
     }
 
     // ── Pestaña: Comprobantes (cabecera, sin detalle de items) ──
+    async function cargarTopVendidos() {
+      const cont = document.getElementById('top-vendidos');
+      if (!cont) return;
+      try {
+        const resp = await fetch('/admin/productos-mas-vendidos');
+        const data = await resp.json();
+        if (!resp.ok || !data.success) {
+          throw new Error(data.error || 'No se pudo cargar el top de productos.');
+        }
+        cont.innerHTML = '';
+        if (!data.productos.length) {
+          cont.innerHTML = '<p class="empty">Aún no hay ventas para calcular los productos más vendidos.</p>';
+          return;
+        }
+        const nombres = ['#1', '#2', '#3', '#4', '#5', '#6', '#7', '#8', '#9', '#10'];
+        data.productos.forEach(function (p, i) {
+          const card = document.createElement('div');
+          card.className = 'top-vendido-card';
+          const unidades = Number(p.unidades) || 0;
+          const monto = Number(p.monto) || 0;
+          card.innerHTML =
+            '<div class="tv-pos">' + (nombres[i] || ('#' + (i + 1))) + '</div>' +
+            '<div class="tv-nombre">' + escapeHtml(p.nombre) + '</div>' +
+            '<div class="tv-num"><span>Unidades: <strong>' + unidades + '</strong></span></div>' +
+            '<div class="tv-num"><span>Ingreso: <strong>S/ ' + monto.toFixed(2) + '</strong></span></div>';
+          cont.appendChild(card);
+        });
+      } catch (err) {
+        cont.innerHTML = '<p class="empty">No se pudo cargar el top de productos más vendidos.</p>';
+      }
+    }
+
     async function cargarComprobantes() {
       const tbody = document.getElementById('comprobantes-tbody');
       const msg = document.getElementById('comprobantes-msg');
@@ -1315,6 +1415,9 @@
     document.getElementById('btn-refrescar-comprobantes').addEventListener('click', function () {
       ventasPromesa = null;
       cargarComprobantes();
+    });
+    document.getElementById('btn-refrescar-topventas').addEventListener('click', function () {
+      cargarTopVendidos();
     });
 
     // ── Modal de detalle de comprobante ──

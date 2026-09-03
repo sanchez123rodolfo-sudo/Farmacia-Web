@@ -996,6 +996,46 @@ def listar_ventas_bd(limite=50):
         conexion.close()
 
 
+def listar_productos_mas_vendidos_bd(limite=5):
+    """Devuelve los medicamentos con mayor rotación de ventas (Top N),
+    ordenados por cantidad total vendida (y por monto/ingreso como
+    criterio de desempate). Se usa exclusivamente para el panel
+    "Productos Más Vendidos" de la pestaña Comprobantes.
+    limite: cantidad máxima de productos a retornar (default 5).
+    Lanza excepción si la BD no está disponible."""
+    conexion = conectar_bd()
+    if not conexion:
+        raise RuntimeError("No se pudo conectar a la base de datos.")
+    try:
+        with conexion.cursor() as cursor:
+            cursor.execute(
+                "SELECT dc.medicamento_id, m.nombre, "
+                "SUM(dc.cantidad) AS unidades, SUM(dc.subtotal_linea) AS monto "
+                "FROM detalle_comprobantes dc "
+                "JOIN medicamentos m ON m.id = dc.medicamento_id "
+                "GROUP BY dc.medicamento_id, m.nombre "
+                "ORDER BY unidades DESC, monto DESC, m.nombre ASC "
+                "LIMIT %s",
+                (int(limite),)
+            )
+            filas = cursor.fetchall()
+        ranking = [
+            {
+                "nombre": f[1],
+                "unidades": int(f[2]) if f[2] is not None else 0,
+                "monto": float(f[3]) if f[3] is not None else 0.0,
+            }
+            for f in filas
+        ]
+        print(f"🏆 Top {len(ranking)} productos más vendidos")
+        return ranking
+    except Exception as e:
+        print(f"❌ Error al listar productos más vendidos: {e}")
+        raise
+    finally:
+        conexion.close()
+
+
 def listar_clientes_bd(limite=200):
     """Devuelve los clientes registrados con un resumen de sus compras.
     Usa LEFT JOIN para incluir tambien clientes que nunca han comprado.
