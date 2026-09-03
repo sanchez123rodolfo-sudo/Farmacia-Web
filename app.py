@@ -27,6 +27,7 @@ from Practica_POO_Farmacia import (
     listar_clientes_bd,
     listar_productos_mas_vendidos_bd,
     importar_medicamentos_csv_bd,
+    _adaptar_sql,
     Medicamento,
 )
 from sunat_service import (
@@ -436,18 +437,22 @@ def api_ventas():
             try:
                 conexion_revert = conectar_bd()
                 if conexion_revert:
-                    with conexion_revert.cursor() as cur_rev:
+                    cur_rev = conexion_revert.cursor()
+                    try:
                         for item in carrito_interno:
                             # UPDATE incrementa stock y decrementa ventas_totales,
                             # invirtiendo exactamente las unidades base que
                             # descontó registrar_venta_carrito_bd
                             # (cantidad x factor de la presentación vendida).
                             cur_rev.execute(
-                                "UPDATE medicamentos SET stock = stock + %s, "
-                                "ventas_totales = ventas_totales - %s "
-                                "WHERE LOWER(nombre) = LOWER(%s)",
+                                _adaptar_sql(conexion_revert,
+                                    "UPDATE medicamentos SET stock = stock + %s, "
+                                    "ventas_totales = ventas_totales - %s "
+                                    "WHERE LOWER(nombre) = LOWER(%s)"),
                                 (item["unidades_a_descontar"], float(item["subtotal"]), item["medicamento"].nombre)
                             )
+                    finally:
+                        cur_rev.close()
                     conexion_revert.commit()
                     print(f"[SUNAT] Stock revertido para {len(carrito_interno)} medicamentos")
                     conexion_revert.close()

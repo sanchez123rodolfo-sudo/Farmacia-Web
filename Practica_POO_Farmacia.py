@@ -54,6 +54,23 @@ def conectar_bd():
             print(f"❌ Error al conectar a SQLite: {e_sqlite}")
             return None
 
+def _es_sqlite(conexion):
+    """Determina dinámicamente si la conexión es de SQLite."""
+    return isinstance(conexion, sqlite3.Connection)
+
+
+def _adaptar_sql(conexion, sql):
+    """Adapta los placeholders de una sentencia SQL al motor activo.
+
+    MySQL (pymysql) usa `%s`; SQLite usa `?`. Detectamos el motor por el
+    tipo de la conexión y convertimos los marcadores en consecuencia,
+    sin tocar la lógica de negocio.
+    """
+    if _es_sqlite(conexion):
+        return sql.replace("%s", "?")
+    return sql
+
+
 # Probar conexión inicial
 mi_conexion = conectar_bd()
 if mi_conexion:
@@ -69,27 +86,29 @@ def buscar_cliente_bd(documento):
     conexion = conectar_bd()
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            # Consulta parametrizada para evitar inyección SQL.
-            cursor.execute(
+        # Consulta parametrizada para evitar inyección SQL.
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "SELECT numero_documento, tipo_documento, nombre_razon_social, direccion "
-                "FROM clientes WHERE numero_documento = %s",
-                (str(documento),)
-            )
-            fila = cursor.fetchone()
-            if not fila:
-                return None
-            return {
-                "documento": fila[0],
-                "tipo_documento": fila[1],
-                "nombre": fila[2],
-                "direccion": fila[3],
-            }
+                "FROM clientes WHERE numero_documento = %s"),
+            (str(documento),)
+        )
+        fila = cursor.fetchone()
+        if not fila:
+            return None
+        return {
+            "documento": fila[0],
+            "tipo_documento": fila[1],
+            "nombre": fila[2],
+            "direccion": fila[3],
+        }
     except Exception as e:
         print(f"❌ Error al buscar cliente: {e}")
         raise
     finally:
+        cursor.close()
         conexion.close()
 
 
@@ -285,11 +304,11 @@ def guardar_medicamento_bd(medicamento):
     # Intenta establecer conexión con la base de datos MySQL.
     conexion = conectar_bd()
     if conexion:
+        cursor = conexion.cursor()
         try:
-            with conexion.cursor() as cursor:
-                # Preparamos la sentencia SQL para insertar o actualizar el medicamento.
-                # Si el nombre choca con una clave única, actualizamos los valores existentes.
-                sql = """
+            # Preparamos la sentencia SQL para insertar o actualizar el medicamento.
+            # Si el nombre choca con una clave única, actualizamos los valores existentes.
+            sql = """
                 INSERT INTO medicamentos (nombre, componente, laboratorio, precio, stock, requiere_receta, ventas_totales, activo, unidades_por_blister, precio_blister)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
                 ON DUPLICATE KEY UPDATE
@@ -300,17 +319,17 @@ def guardar_medicamento_bd(medicamento):
                     unidades_por_blister = VALUES(unidades_por_blister),
                     precio_blister = VALUES(precio_blister)
                 """
-                cursor.execute(sql, (
-                    medicamento.nombre,
-                    medicamento.componente,
-                    medicamento.laboratorio,
-                    medicamento.precio,
-                    medicamento.stock,
-                    medicamento.requiere_receta,
-                    medicamento.ventas_totales,
-                    medicamento.unidades_por_blister,
-                    medicamento.precio_blister,
-                ))
+            cursor.execute(_adaptar_sql(conexion, sql), (
+                medicamento.nombre,
+                medicamento.componente,
+                medicamento.laboratorio,
+                medicamento.precio,
+                medicamento.stock,
+                medicamento.requiere_receta,
+                medicamento.ventas_totales,
+                medicamento.unidades_por_blister,
+                medicamento.precio_blister,
+            ))
             # Guardamos los cambios en la base de datos.
             conexion.commit()
             print(f"💾 '{medicamento.nombre}' guardado en MySQL correctamente.")
@@ -319,6 +338,7 @@ def guardar_medicamento_bd(medicamento):
             print(f"❌ Error al guardar en la BD: {e}")
         finally:
             # Cerramos siempre la conexión para liberar recursos.
+            cursor.close()
             conexion.close()
 
 
@@ -326,15 +346,16 @@ def descontinuar_medicamento_bd(nombre_medicamento):
     """Realiza el borrado lógico en la base de datos cambiando activo = 0"""
     conexion = conectar_bd()
     if conexion:
+        cursor = conexion.cursor()
         try:
-            with conexion.cursor() as cursor:
-                sql = "UPDATE medicamentos SET activo = 0 WHERE LOWER(nombre) = LOWER(%s)" #actualizar medi colocar activo = 0 donde lower(nombre) = lower(%s)
-                cursor.execute(sql, (nombre_medicamento,))
+            sql = "UPDATE medicamentos SET activo = 0 WHERE LOWER(nombre) = LOWER(%s)"
+            cursor.execute(_adaptar_sql(conexion, sql), (nombre_medicamento,))
             conexion.commit()
             print(f"🗑️ '{nombre_medicamento}' marcado como inactivo (borrado lógico) en MySQL.")
         except Exception as e:
             print(f"❌ Error al descontinuar en la BD: {e}")
         finally:
+            cursor.close()
             conexion.close()
 
 # =========================================================
@@ -348,11 +369,13 @@ def listar_medicamentos_bd():
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
     try:
-        with conexion.cursor() as cursor:
+        cursor = conexion.cursor()
+        try:
             cursor.execute(
-                "SELECT id, nombre, categoria, codigo_barras, componente, laboratorio, precio, stock, "
-                "requiere_receta, ventas_totales, fecha_vencimiento, unidades_por_blister, precio_blister "
-                "FROM medicamentos WHERE activo = 1 ORDER BY nombre"
+                _adaptar_sql(conexion,
+                    "SELECT id, nombre, categoria, codigo_barras, componente, laboratorio, precio, stock, "
+                    "requiere_receta, ventas_totales, fecha_vencimiento, unidades_por_blister, precio_blister "
+                    "FROM medicamentos WHERE activo = 1 ORDER BY nombre")
             )
             for fila in cursor.fetchall():
                 medicamentos.append({
@@ -376,8 +399,9 @@ def listar_medicamentos_bd():
             # se entrega lista vacía sin romper el panel.
             try:
                 cursor.execute(
-                    "SELECT id, medicamento_id, nombre, factor, precio "
-                    "FROM presentaciones WHERE activo = 1 ORDER BY factor"
+                    _adaptar_sql(conexion,
+                        "SELECT id, medicamento_id, nombre, factor, precio "
+                        "FROM presentaciones WHERE activo = 1 ORDER BY factor")
                 )
                 pres_por_med = {}
                 for p in cursor.fetchall():
@@ -393,6 +417,8 @@ def listar_medicamentos_bd():
                 print(f"⚠️ Tabla 'presentaciones' no disponible (¿falta migración?): {e_pres}")
                 for med in medicamentos:
                     med["presentaciones"] = []
+        finally:
+            cursor.close()
     except Exception as e:
         print(f"❌ Error al listar medicamentos: {e}")
         raise
@@ -413,7 +439,8 @@ def listar_presentaciones_bd(medicamento_id=None, solo_activas=True):
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
     try:
-        with conexion.cursor() as cursor:
+        cursor = conexion.cursor()
+        try:
             sql = ("SELECT id, medicamento_id, nombre, factor, precio, activo "
                    "FROM presentaciones")
             condiciones = []
@@ -426,7 +453,7 @@ def listar_presentaciones_bd(medicamento_id=None, solo_activas=True):
             if condiciones:
                 sql += " WHERE " + " AND ".join(condiciones)
             sql += " ORDER BY factor"
-            cursor.execute(sql, tuple(params))
+            cursor.execute(_adaptar_sql(conexion, sql), tuple(params))
             return [
                 {
                     "id": int(f[0]),
@@ -438,6 +465,8 @@ def listar_presentaciones_bd(medicamento_id=None, solo_activas=True):
                 }
                 for f in cursor.fetchall()
             ]
+        finally:
+            cursor.close()
     except Exception as e:
         print(f"❌ Error al listar presentaciones: {e}")
         raise
@@ -477,22 +506,24 @@ def registrar_presentacion_bd(medicamento_id, nombre, factor, precio):
     conexion = conectar_bd()
     if not conexion:
         return False, "No se pudo conectar a la base de datos."
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            # El medicamento debe existir y estar activo.
-            cursor.execute("SELECT activo FROM medicamentos WHERE id = %s", (medicamento_id,))
-            fila_med = cursor.fetchone()
-            if not fila_med:
-                return False, f"No existe el medicamento con id {medicamento_id}."
-            if not fila_med[0]:
-                return False, "El medicamento está descontinuado: no admite nuevas presentaciones."
+        # El medicamento debe existir y estar activo.
+        cursor.execute(_adaptar_sql(conexion, "SELECT activo FROM medicamentos WHERE id = %s"), (medicamento_id,))
+        fila_med = cursor.fetchone()
+        if not fila_med:
+            return False, f"No existe el medicamento con id {medicamento_id}."
+        if not fila_med[0]:
+            return False, "El medicamento está descontinuado: no admite nuevas presentaciones."
 
-            cursor.execute(
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "INSERT INTO presentaciones (medicamento_id, nombre, factor, precio) "
-                "VALUES (%s, %s, %s, %s)",
-                (medicamento_id, nombre, float(factor_dec), float(precio_dec))
-            )
-            nuevo_id = cursor.lastrowid
+                "VALUES (%s, %s, %s, %s)"),
+            (medicamento_id, nombre, float(factor_dec), float(precio_dec))
+        )
+        nuevo_id = cursor.lastrowid
+        cursor.close()
         conexion.commit()
         print(f"✅ Presentación '{nombre}' (x{factor_dec}) registrada para medicamento id={medicamento_id}.")
         return True, nuevo_id
@@ -548,21 +579,24 @@ def editar_presentacion_bd(presentacion_id, factor=None, precio=None):
     conexion = conectar_bd()
     if not conexion:
         return False, "No se pudo conectar a la base de datos."
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            # Verificar existencia ANTES de actualizar. MySQL reporta rowcount=0
-            # cuando el UPDATE no cambia valores reales (aunque la fila exista),
-            # por lo que NO se debe usar rowcount para detectar "no existe":
-            # guardar un precio sin modificarlo disparaba el falso error
-            # "No existe la presentación con id N".
-            cursor.execute("SELECT id FROM presentaciones WHERE id = %s", (presentacion_id,))
-            if cursor.fetchone() is None:
-                return False, f"No existe la presentación con id {presentacion_id}."
+        # Verificar existencia ANTES de actualizar. MySQL reporta rowcount=0
+        # cuando el UPDATE no cambia valores reales (aunque la fila exista),
+        # por lo que NO se debe usar rowcount para detectar "no existe":
+        # guardar un precio sin modificarlo disparaba el falso error
+        # "No existe la presentación con id N".
+        cursor.execute(_adaptar_sql(conexion, "SELECT id FROM presentaciones WHERE id = %s"), (presentacion_id,))
+        if cursor.fetchone() is None:
+            cursor.close()
+            return False, f"No existe la presentación con id {presentacion_id}."
 
-            cursor.execute(
-                f"UPDATE presentaciones SET {', '.join(campos_sql)} WHERE id = %s",
-                tuple(params)
-            )
+        cursor.execute(
+            _adaptar_sql(conexion,
+                f"UPDATE presentaciones SET {', '.join(campos_sql)} WHERE id = %s"),
+            tuple(params)
+        )
+        cursor.close()
         conexion.commit()
         print(f"✅ Presentación id={presentacion_id} actualizada.")
         return True, "Presentación actualizada correctamente."
@@ -587,15 +621,17 @@ def desactivar_presentacion_bd(presentacion_id):
     conexion = conectar_bd()
     if not conexion:
         return False, "No se pudo conectar a la base de datos."
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            # Verificar existencia antes de desactivar (no depender de rowcount:
-            # si la presentación ya está inactiva, MySQL reporta 0 filas).
-            cursor.execute("SELECT id FROM presentaciones WHERE id = %s", (presentacion_id,))
-            if cursor.fetchone() is None:
-                return False, f"No existe la presentación con id {presentacion_id}."
+        # Verificar existencia antes de desactivar (no depender de rowcount:
+        # si la presentación ya está inactiva, MySQL reporta 0 filas).
+        cursor.execute(_adaptar_sql(conexion, "SELECT id FROM presentaciones WHERE id = %s"), (presentacion_id,))
+        if cursor.fetchone() is None:
+            cursor.close()
+            return False, f"No existe la presentación con id {presentacion_id}."
 
-            cursor.execute("UPDATE presentaciones SET activo = 0 WHERE id = %s", (presentacion_id,))
+        cursor.execute(_adaptar_sql(conexion, "UPDATE presentaciones SET activo = 0 WHERE id = %s"), (presentacion_id,))
+        cursor.close()
         conexion.commit()
         print(f"✅ Presentación id={presentacion_id} desactivada (borrado lógico).")
         return True, "Presentación desactivada correctamente."
@@ -622,36 +658,39 @@ def registrar_medicamento_bd(nombre, categoria, componente, laboratorio, precio,
     componente = (componente or "").strip() or "No especificado"
     laboratorio = (laboratorio or "").strip() or "No especificado"
 
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            cursor.execute(
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "INSERT INTO medicamentos (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, ventas_totales, activo, fecha_vencimiento, unidades_por_blister, precio_blister) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s, %s, %s)",
-                (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
-            )
-            nuevo_id = cursor.lastrowid
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s, %s, %s)"),
+            (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
+        )
+        nuevo_id = cursor.lastrowid
 
-            if presentacion:
-                p_nombre = (presentacion.get("nombre") or "").strip()
-                p_factor = Decimal(str(presentacion.get("factor") or 0))
-                p_precio = Decimal(str(presentacion.get("precio") or 0))
+        if presentacion:
+            p_nombre = (presentacion.get("nombre") or "").strip()
+            p_factor = Decimal(str(presentacion.get("factor") or 0))
+            p_precio = Decimal(str(presentacion.get("precio") or 0))
 
-                if not p_nombre:
-                    raise ValueError("El nombre de la presentación es obligatorio.")
-                if len(p_nombre) > 50:
-                    raise ValueError("El nombre de la presentación no puede exceder los 50 caracteres.")
-                if p_factor < 1:
-                    raise ValueError("El factor de la presentación debe ser 1 o más.")
-                if p_precio <= 0:
-                    raise ValueError("El precio de la presentación debe ser mayor que 0.")
+            if not p_nombre:
+                raise ValueError("El nombre de la presentación es obligatorio.")
+            if len(p_nombre) > 50:
+                raise ValueError("El nombre de la presentación no puede exceder los 50 caracteres.")
+            if p_factor < 1:
+                raise ValueError("El factor de la presentación debe ser 1 o más.")
+            if p_precio <= 0:
+                raise ValueError("El precio de la presentación debe ser mayor que 0.")
 
-                cursor.execute(
+            cursor.execute(
+                _adaptar_sql(conexion,
                     "INSERT INTO presentaciones (medicamento_id, nombre, factor, precio) "
-                    "VALUES (%s, %s, %s, %s)",
-                    (nuevo_id, p_nombre, float(p_factor), float(p_precio))
-                )
+                    "VALUES (%s, %s, %s, %s)"),
+                (nuevo_id, p_nombre, float(p_factor), float(p_precio))
+            )
 
         # Un único commit: medicamento + presentación se guardan juntos.
+        cursor.close()
         conexion.commit()
         return True, nuevo_id
     except ValueError as e:
@@ -689,7 +728,8 @@ def importar_medicamentos_csv_bd(rows):
 
     try:
         conexion.begin()
-        with conexion.cursor() as cursor:
+        cursor = conexion.cursor()
+        try:
             for i, row in enumerate(rows, start=1):
                 nombre = (row.get("nombre") or "").strip()
                 if not nombre:
@@ -735,18 +775,21 @@ def importar_medicamentos_csv_bd(rows):
                     precio_blister = None
 
                 # Verificar duplicado por nombre
-                cursor.execute("SELECT id FROM medicamentos WHERE LOWER(nombre) = LOWER(%s)", (nombre,))
+                cursor.execute(_adaptar_sql(conexion, "SELECT id FROM medicamentos WHERE LOWER(nombre) = LOWER(%s)"), (nombre,))
                 if cursor.fetchone():
                     duplicados += 1
                     continue
 
                 cursor.execute(
-                    "INSERT INTO medicamentos "
-                    "(nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, ventas_totales, activo, fecha_vencimiento, unidades_por_blister, precio_blister) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s, %s, %s)",
+                    _adaptar_sql(conexion,
+                        "INSERT INTO medicamentos "
+                        "(nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, ventas_totales, activo, fecha_vencimiento, unidades_por_blister, precio_blister) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s, %s, %s)"),
                     (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
                 )
                 insertados += 1
+        finally:
+            cursor.close()
 
         conexion.commit()
         print(f"📥 Importación CSV completada → insertados: {insertados}, duplicados: {duplicados}, errores: {len(errores)}")
@@ -766,16 +809,19 @@ def reabastecer_stock_bd(medicamento_id, cantidad):
     conexion = conectar_bd()
     if not conexion:
         return False, "No se pudo conectar a la base de datos."
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            cursor.execute(
-                "UPDATE medicamentos SET stock = stock + %s WHERE id = %s AND activo = 1",
-                (cantidad, medicamento_id)
-            )
-            if cursor.rowcount == 0:
-                return False, "Medicamento no encontrado o inactivo."
-            cursor.execute("SELECT stock FROM medicamentos WHERE id = %s", (medicamento_id,))
-            nuevo_stock = cursor.fetchone()[0]
+        cursor.execute(
+            _adaptar_sql(conexion,
+                "UPDATE medicamentos SET stock = stock + %s WHERE id = %s AND activo = 1"),
+            (cantidad, medicamento_id)
+        )
+        if cursor.rowcount == 0:
+            cursor.close()
+            return False, "Medicamento no encontrado o inactivo."
+        cursor.execute(_adaptar_sql(conexion, "SELECT stock FROM medicamentos WHERE id = %s"), (medicamento_id,))
+        nuevo_stock = cursor.fetchone()[0]
+        cursor.close()
         conexion.commit()
         return True, nuevo_stock
     except Exception as e:
@@ -792,14 +838,17 @@ def descontinuar_medicamento_por_id_bd(medicamento_id):
     conexion = conectar_bd()
     if not conexion:
         return False, "No se pudo conectar a la base de datos."
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            cursor.execute(
-                "UPDATE medicamentos SET activo = 0 WHERE id = %s AND activo = 1",
-                (medicamento_id,)
-            )
-            if cursor.rowcount == 0:
-                return False, "Medicamento no encontrado o ya estaba dado de baja."
+        cursor.execute(
+            _adaptar_sql(conexion,
+                "UPDATE medicamentos SET activo = 0 WHERE id = %s AND activo = 1"),
+            (medicamento_id,)
+        )
+        if cursor.rowcount == 0:
+            cursor.close()
+            return False, "Medicamento no encontrado o ya estaba dado de baja."
+        cursor.close()
         conexion.commit()
         return True, "Medicamento dado de baja correctamente."
     except Exception as e:
@@ -819,32 +868,35 @@ def consultar_alertas_bd():
     conexion = conectar_bd()
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            # Medicamentos con stock bajo (≤ 5 unidades)
-            cursor.execute(
+        # Medicamentos con stock bajo (≤ 5 unidades)
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "SELECT id, nombre, stock, fecha_vencimiento "
-                "FROM medicamentos WHERE activo = 1 AND stock <= 5 ORDER BY stock ASC"
-            )
-            stock_bajo = [
-                {"id": f[0], "nombre": f[1], "stock": int(f[2]), "fecha_vencimiento": f[3]}
-                for f in cursor.fetchall()
-            ]
+                "FROM medicamentos WHERE activo = 1 AND stock <= 5 ORDER BY stock ASC")
+        )
+        stock_bajo = [
+            {"id": f[0], "nombre": f[1], "stock": int(f[2]), "fecha_vencimiento": f[3]}
+            for f in cursor.fetchall()
+        ]
 
-            # Medicamentos por vencer (≤ 30 días desde hoy).
-            # DATEDIFF devuelve días restantes (negativo = ya vencido),
-            # útil para pintar badges de severidad en el panel admin.
-            cursor.execute(
+        # Medicamentos por vencer (≤ 30 días desde hoy).
+        # DATEDIFF devuelve días restantes (negativo = ya vencido),
+        # útil para pintar badges de severidad en el panel admin.
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "SELECT id, nombre, stock, fecha_vencimiento, DATEDIFF(fecha_vencimiento, CURDATE()) "
                 "FROM medicamentos WHERE activo = 1 AND fecha_vencimiento IS NOT NULL "
                 "AND fecha_vencimiento <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) "
-                "ORDER BY fecha_vencimiento ASC"
-            )
-            por_vencer = [
-                {"id": f[0], "nombre": f[1], "stock": int(f[2]), "fecha_vencimiento": str(f[3]),
-                 "dias_restantes": int(f[4])}
-                for f in cursor.fetchall()
-            ]
+                "ORDER BY fecha_vencimiento ASC")
+        )
+        por_vencer = [
+            {"id": f[0], "nombre": f[1], "stock": int(f[2]), "fecha_vencimiento": str(f[3]),
+             "dias_restantes": int(f[4])}
+            for f in cursor.fetchall()
+        ]
+        cursor.close()
 
         print(f"🔔 Alertas: {len(stock_bajo)} con stock bajo, {len(por_vencer)} por vencer")
         return {"stock_bajo": stock_bajo, "por_vencer": por_vencer}
@@ -861,18 +913,20 @@ def reporte_ganancias_bd():
     conexion = conectar_bd()
     if not conexion:
         return None
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            cursor.execute(
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "SELECT COALESCE(SUM(total), 0), COALESCE(SUM(igv), 0), COUNT(*) "
-                "FROM comprobantes"
-            )
-            fila = cursor.fetchone()
-            return {
-                "total_ingresos": float(fila[0]),
-                "total_igv": float(fila[1]),
-                "cantidad_ventas": int(fila[2]),
-            }
+                "FROM comprobantes")
+        )
+        fila = cursor.fetchone()
+        cursor.close()
+        return {
+            "total_ingresos": float(fila[0]),
+            "total_igv": float(fila[1]),
+            "cantidad_ventas": int(fila[2]),
+        }
     except Exception as e:
         print(f"❌ Error al calcular reporte de ganancias: {e}")
         return None
@@ -888,46 +942,49 @@ def reporte_ganancias_filtrado_bd(mes=None, anio=None):
     conexion = conectar_bd()
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            condiciones = []
-            params = []
-            if anio:
-                condiciones.append("YEAR(fecha) = %s")
-                params.append(int(anio))
-            if mes:
-                condiciones.append("MONTH(fecha) = %s")
-                params.append(int(mes))
+        condiciones = []
+        params = []
+        if anio:
+            condiciones.append("YEAR(fecha) = %s")
+            params.append(int(anio))
+        if mes:
+            condiciones.append("MONTH(fecha) = %s")
+            params.append(int(mes))
 
-            where = (" WHERE " + " AND ".join(condiciones)) if condiciones else ""
+        where = (" WHERE " + " AND ".join(condiciones)) if condiciones else ""
 
-            cursor.execute(
+        cursor.execute(
+            _adaptar_sql(conexion,
                 f"SELECT COALESCE(SUM(total), 0), COALESCE(SUM(igv), 0), COUNT(*) "
-                f"FROM comprobantes{where}",
-                tuple(params)
-            )
-            fila = cursor.fetchone()
+                f"FROM comprobantes{where}"),
+            tuple(params)
+        )
+        fila = cursor.fetchone()
 
-            # Desglose por método de pago
-            cursor.execute(
+        # Desglose por método de pago
+        cursor.execute(
+            _adaptar_sql(conexion,
                 f"SELECT metodo_pago, COALESCE(SUM(total), 0), COUNT(*) "
                 f"FROM comprobantes{where} "
-                f"GROUP BY metodo_pago ORDER BY SUM(total) DESC",
-                tuple(params)
-            )
-            por_metodo = cursor.fetchall()
-            metodos_pago = [
-                {"metodo": r[0] or "Sin especificar", "total": float(r[1]), "cantidad": int(r[2])}
-                for r in por_metodo
-            ]
+                f"GROUP BY metodo_pago ORDER BY SUM(total) DESC"),
+            tuple(params)
+        )
+        por_metodo = cursor.fetchall()
+        cursor.close()
+        metodos_pago = [
+            {"metodo": r[0] or "Sin especificar", "total": float(r[1]), "cantidad": int(r[2])}
+            for r in por_metodo
+        ]
 
-            return {
-                "total_ingresos": float(fila[0]),
-                "total_igv": float(fila[1]),
-                "cantidad_ventas": int(fila[2]),
-                "metodos_pago": metodos_pago,
-                "filtros": {"mes": mes, "anio": anio},
-            }
+        return {
+            "total_ingresos": float(fila[0]),
+            "total_igv": float(fila[1]),
+            "cantidad_ventas": int(fila[2]),
+            "metodos_pago": metodos_pago,
+            "filtros": {"mes": mes, "anio": anio},
+        }
     except Exception as e:
         print(f"❌ Error al calcular reporte de ganancias filtrado: {e}")
         raise
@@ -943,58 +1000,61 @@ def listar_ventas_bd(limite=50):
     conexion = conectar_bd()
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            # Cabecera de comprobantes + datos del cliente.
-            # Solo usa tablas base del sistema: comprobantes y clientes.
-            cursor.execute(
+        # Cabecera de comprobantes + datos del cliente.
+        # Solo usa tablas base del sistema: comprobantes y clientes.
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "SELECT c.id, c.tipo_comprobante, c.serie, c.correlativo, c.fecha, "
                 "cl.nombre_razon_social, cl.numero_documento, "
                 "c.subtotal, c.igv, c.total, c.metodo_pago "
                 "FROM comprobantes c "
                 "LEFT JOIN clientes cl ON cl.id = c.cliente_id "
-                "ORDER BY c.fecha DESC, c.id DESC LIMIT %s",
-                (int(limite),)
-            )
-            filas = cursor.fetchall()
+                "ORDER BY c.fecha DESC, c.id DESC LIMIT %s"),
+            (int(limite),)
+        )
+        filas = cursor.fetchall()
 
-            # Detalle de productos agrupado por comprobante (una sola consulta).
-            detalles = {}
-            ids = [f[0] for f in filas]
-            if ids:
-                placeholders = ", ".join(["%s"] * len(ids))
-                cursor.execute(
+        # Detalle de productos agrupado por comprobante (una sola consulta).
+        detalles = {}
+        ids = [f[0] for f in filas]
+        if ids:
+            placeholders = ", ".join(["%s"] * len(ids))
+            cursor.execute(
+                _adaptar_sql(conexion,
                     "SELECT dc.comprobante_id, m.nombre, dc.cantidad, dc.precio_unitario, dc.subtotal_linea "
                     "FROM detalle_comprobantes dc "
                     "JOIN medicamentos m ON m.id = dc.medicamento_id "
-                    f"WHERE dc.comprobante_id IN ({placeholders})",
-                    tuple(ids)
-                )
-                for d in cursor.fetchall():
-                    detalles.setdefault(d[0], []).append({
-                        "producto": d[1],
-                        "cantidad": int(d[2]),
-                        "precio_unitario": float(d[3]),
-                        "subtotal": float(d[4]),
-                    })
+                    f"WHERE dc.comprobante_id IN ({placeholders})"),
+                tuple(ids)
+            )
+            for d in cursor.fetchall():
+                detalles.setdefault(d[0], []).append({
+                    "producto": d[1],
+                    "cantidad": int(d[2]),
+                    "precio_unitario": float(d[3]),
+                    "subtotal": float(d[4]),
+                })
+        cursor.close()
 
-            ventas = [
-                {
-                    "id": f[0],
-                    "tipo_comprobante": f[1],
-                    "serie": f[2],
-                    "correlativo": int(f[3]),
-                    "fecha": str(f[4]) if f[4] else None,
-                    "cliente": f[5] or "Cliente varios",
-                    "documento": f[6] or "—",
-                    "subtotal": float(f[7]),
-                    "igv": float(f[8]),
-                    "total": float(f[9]),
-                    "metodo_pago": f[10] or "—",
-                    "items": detalles.get(f[0], []),
-                }
-                for f in filas
-            ]
+        ventas = [
+            {
+                "id": f[0],
+                "tipo_comprobante": f[1],
+                "serie": f[2],
+                "correlativo": int(f[3]),
+                "fecha": str(f[4]) if f[4] else None,
+                "cliente": f[5] or "Cliente varios",
+                "documento": f[6] or "—",
+                "subtotal": float(f[7]),
+                "igv": float(f[8]),
+                "total": float(f[9]),
+                "metodo_pago": f[10] or "—",
+                "items": detalles.get(f[0], []),
+            }
+            for f in filas
+        ]
         print(f"🧾 Historial: {len(ventas)} comprobantes listados")
         return ventas
     except Exception as e:
@@ -1014,19 +1074,21 @@ def listar_productos_mas_vendidos_bd(limite=5):
     conexion = conectar_bd()
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            cursor.execute(
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "SELECT dc.medicamento_id, m.nombre, "
                 "SUM(dc.cantidad) AS unidades, SUM(dc.subtotal_linea) AS monto "
                 "FROM detalle_comprobantes dc "
                 "JOIN medicamentos m ON m.id = dc.medicamento_id "
                 "GROUP BY dc.medicamento_id, m.nombre "
                 "ORDER BY unidades DESC, monto DESC, m.nombre ASC "
-                "LIMIT %s",
-                (int(limite),)
-            )
-            filas = cursor.fetchall()
+                "LIMIT %s"),
+            (int(limite),)
+        )
+        filas = cursor.fetchall()
+        cursor.close()
         ranking = [
             {
                 "nombre": f[1],
@@ -1052,30 +1114,32 @@ def listar_clientes_bd(limite=200):
     conexion = conectar_bd()
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
+    cursor = conexion.cursor()
     try:
-        with conexion.cursor() as cursor:
-            cursor.execute(
+        cursor.execute(
+            _adaptar_sql(conexion,
                 "SELECT cl.id, cl.tipo_documento, cl.numero_documento, cl.nombre_razon_social, "
                 "cl.direccion, COUNT(c.id) AS num_compras, COALESCE(SUM(c.total), 0) AS total_comprado "
                 "FROM clientes cl "
                 "LEFT JOIN comprobantes c ON c.cliente_id = cl.id "
                 "GROUP BY cl.id, cl.tipo_documento, cl.numero_documento, "
                 "cl.nombre_razon_social, cl.direccion "
-                "ORDER BY num_compras DESC, cl.nombre_razon_social ASC LIMIT %s",
-                (int(limite),)
-            )
-            clientes = [
-                {
-                    "id": f[0],
-                    "tipo_documento": f[1] or "—",
-                    "documento": f[2] or "—",
-                    "nombre": f[3] or "Cliente varios",
-                    "direccion": f[4] or "—",
-                    "num_compras": int(f[5]),
-                    "total_comprado": float(f[6]),
-                }
-                for f in cursor.fetchall()
-            ]
+                "ORDER BY num_compras DESC, cl.nombre_razon_social ASC LIMIT %s"),
+            (int(limite),)
+        )
+        clientes = [
+            {
+                "id": f[0],
+                "tipo_documento": f[1] or "—",
+                "documento": f[2] or "—",
+                "nombre": f[3] or "Cliente varios",
+                "direccion": f[4] or "—",
+                "num_compras": int(f[5]),
+                "total_comprado": float(f[6]),
+            }
+            for f in cursor.fetchall()
+        ]
+        cursor.close()
         print(f"👥 Clientes: {len(clientes)} listados")
         return clientes
     except Exception as e:
@@ -1123,7 +1187,8 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
     try:
         # Iniciamos la transacción en MySQL para que todas las operaciones sean atómicas.
         conexion.begin()
-        with conexion.cursor() as cursor:
+        cursor = conexion.cursor()
+        try:
             # ── Documento del cliente (opcional para NOTA_VENTA) ──
             # Si no se proporciona documento, se usa un placeholder genérico
             # para satisfacer la restricción NOT NULL de la tabla clientes.
@@ -1136,10 +1201,11 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
 
             # Inserta el cliente o actualiza su nombre si ya existía.
             cursor.execute(
-                "INSERT INTO clientes (tipo_documento, numero_documento, nombre_razon_social, direccion) "
-                "VALUES (%s, %s, %s, %s) "
-                "ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), nombre_razon_social=VALUES(nombre_razon_social), "
-                "direccion = IF(VALUES(direccion) IS NOT NULL AND VALUES(direccion) != '', VALUES(direccion), direccion);",
+                _adaptar_sql(conexion,
+                    "INSERT INTO clientes (tipo_documento, numero_documento, nombre_razon_social, direccion) "
+                    "VALUES (%s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), nombre_razon_social=VALUES(nombre_razon_social), "
+                    "direccion = IF(VALUES(direccion) IS NOT NULL AND VALUES(direccion) != '', VALUES(direccion), direccion);"),
                 (tipo_doc, doc_cliente, nombre_cliente, direccion)
             )
             cliente_id = cursor.lastrowid
@@ -1155,7 +1221,7 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
             else:
                 serie = "B001"
             # Obtenemos el siguiente número correlativo para la serie.
-            cursor.execute("SELECT COALESCE(MAX(correlativo), 0) + 1 FROM comprobantes WHERE serie = %s", (serie,))#coalesce, si el resultado es valido,lo deja pasar, si es null, comienza desde (0)
+            cursor.execute(_adaptar_sql(conexion, "SELECT COALESCE(MAX(correlativo), 0) + 1 FROM comprobantes WHERE serie = %s"), (serie,))#coalesce, si el resultado es valido,lo deja pasar, si es null, comienza desde (0)
             correlativo = cursor.fetchone()[0]#fetchone() devuelve una tupla, por eso se accede al primer elemento con [0] entra al primer casillero de esa tupla y saca el número puro del correlativo
 
             # Calculamos el subtotal base antes del IGV y el IGV como la diferencia.
@@ -1175,7 +1241,8 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
             while True:
                 try:
                     cursor.execute(
-                        "INSERT INTO comprobantes (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total, metodo_pago, monto_pagado, numero_operacion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                        _adaptar_sql(conexion,
+                            "INSERT INTO comprobantes (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total, metodo_pago, monto_pagado, numero_operacion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"),
                         datos_venta
                     )
                     break
@@ -1186,7 +1253,7 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                     intentos_correlativo += 1
                     print(f"⚠️ Correlativo {serie}-{correlativo} en conflicto por venta simultánea; reintentando ({intentos_correlativo}/5)...")
                     cursor.execute(
-                        "SELECT COALESCE(MAX(correlativo), 0) + 1 FROM comprobantes WHERE serie = %s",
+                        _adaptar_sql(conexion, "SELECT COALESCE(MAX(correlativo), 0) + 1 FROM comprobantes WHERE serie = %s"),
                         (serie,)
                     )
                     correlativo = cursor.fetchone()[0]
@@ -1203,7 +1270,7 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 # Se incluye 'precio': es la fuente autoritativa del cobro;
                 # NUNCA se confía en el precio que traiga el objeto del frontend.
                 cursor.execute(
-                    "SELECT id, precio FROM medicamentos WHERE LOWER(nombre) = LOWER(%s)",
+                    _adaptar_sql(conexion, "SELECT id, precio FROM medicamentos WHERE LOWER(nombre) = LOWER(%s)"),
                     (medicamento.nombre,)
                 )
                 resultado = cursor.fetchone()
@@ -1220,8 +1287,9 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 presentacion_id = None
                 if presentacion:
                     cursor.execute(
-                        "SELECT id, nombre, factor, precio "
-                        "FROM presentaciones WHERE id = %s AND medicamento_id = %s AND activo = 1",
+                        _adaptar_sql(conexion,
+                            "SELECT id, nombre, factor, precio "
+                            "FROM presentaciones WHERE id = %s AND medicamento_id = %s AND activo = 1"),
                         (presentacion.get("id"), medicamento_id)
                     )
                     fila_pres = cursor.fetchone()
@@ -1249,10 +1317,11 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 # Inserta el detalle del comprobante en la tabla detalle_comprobantes,
                 # guardando la presentación vendida para auditoría e inventario.
                 cursor.execute(
-                    "INSERT INTO detalle_comprobantes "
-                    "(comprobante_id, medicamento_id, cantidad, precio_unitario, subtotal_linea, "
-                    "presentacion_id, presentacion_nombre, factor) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
+                    _adaptar_sql(conexion,
+                        "INSERT INTO detalle_comprobantes "
+                        "(comprobante_id, medicamento_id, cantidad, precio_unitario, subtotal_linea, "
+                        "presentacion_id, presentacion_nombre, factor) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"),
                     (
                         comprobante_id, medicamento_id, item["cantidad"], float(precio_a_cobrar), subtotal_real,
                         presentacion_id,
@@ -1263,13 +1332,17 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 # Actualiza el stock y las ventas_totales de ese medicamento en MySQL.
                 # El WHERE incluye validación de stock suficiente para evitar stock negativo.
                 cursor.execute(
-                    "UPDATE medicamentos SET stock = stock - %s, ventas_totales = ventas_totales + %s WHERE id = %s AND stock >= %s;",
+                    _adaptar_sql(conexion,
+                        "UPDATE medicamentos SET stock = stock - %s, ventas_totales = ventas_totales + %s WHERE id = %s AND stock >= %s;"),
                     (unidades_a_descontar, subtotal_real, medicamento_id, unidades_a_descontar)
                 )
                 if cursor.rowcount == 0:
                     raise StockConflictError(
                         f"Stock insuficiente o modificado concurrentemente para '{medicamento.nombre}' (id={medicamento_id}). Venta abortada."
                     )
+        finally:
+            # Cerramos el cursor pase lo que pase (éxito o excepción).
+            cursor.close()
 
         # Si todo fue bien, guardamos los cambios en MySQL.
         print(f"[registrar_venta_carrito_bd] ANTES DEL COMMIT - metodo_pago={metodo_pago}, monto_pagado={monto_pagado}, numero_operacion={numero_operacion}")
@@ -1415,7 +1488,8 @@ def cargar_medicamentos_bd():
     if not conexion:
         raise RuntimeError("No se pudo conectar a la base de datos.")
     try:
-        with conexion.cursor() as cursor:
+        cursor = conexion.cursor()
+        try:
             # 1. Probamos hacer un SELECT general primero para ver si hay filas
             cursor.execute("SELECT COUNT(*) FROM medicamentos")#seleccionar y contar todas las filas de la tabla medicamentos
             total_filas = cursor.fetchone()[0]#obtine ese valor y lo guarda en la variable total_filas
@@ -1469,6 +1543,8 @@ def cargar_medicamentos_bd():
                     presentaciones=presentaciones_por_med.get(med_id, []),
                 )
                 medicamentos.append(med)
+        finally:
+            cursor.close()
 
         print(f"✅ Se cargaron {len(medicamentos)} medicamentos activos desde MySQL.")
     except Exception as e:
