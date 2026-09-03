@@ -14,4 +14,4 @@ medicamentos_inventario.csv
 agregar_*.py
 agregar_*.sql
 query_db.py
-sunat_service.py
+# sunat_service.py
