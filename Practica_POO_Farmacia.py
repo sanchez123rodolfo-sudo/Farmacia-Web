@@ -4,6 +4,9 @@ import pymysql
 import os
 import requests
 import traceback
+import os
+import sqlite3
+import pymysql
 from decimal import Decimal, ROUND_HALF_UP  # 👈 ¡NUEVO: Para cálculos de dinero exactos!
 
 # Excepción personalizada para conflictos de stock en transacciones concurrentes
@@ -22,29 +25,37 @@ class StockConflictError(Exception):
 #    y el menú del ciclo principal.
 # =========================================================
 
+
 print("1. Iniciando script...")
 
 def conectar_bd():
-    try:
-        conexion = pymysql.connect(
-            host="127.0.0.1",
-            port=3306,
-            user="root",
-            password="",
-            database="farmacia_db",
-            connect_timeout=5
-        )
-        # DEBUG: verificar en qué base de datos real y puerto quedó la conexión.
-        with conexion.cursor() as cursor:
-            cursor.execute("SELECT DATABASE();")
-            db_actual = cursor.fetchone()[0]
-            cursor.execute("SELECT @@port;")
-            puerto_actual = cursor.fetchone()[0]
-        print(f"DEBUG: SELECT DATABASE() = '{db_actual}' | SELECT @@port = {puerto_actual}")
-        return conexion
-    except Exception as e:
-        print(f"❌ Error al conectar: {e}")
-        return None
+    # Detecta si estamos ejecutando el código en el servidor de Render
+    is_render = os.environ.get('RENDER') or os.environ.get('IS_RENDER')
+
+    if is_render:
+        # --- MODO NUBE (Render / SQLite) ---
+        try:
+            conexion = sqlite3.connect("farmacia.db") # Asegúrate del nombre exacto de tu .db
+            conexion.row_factory = sqlite3.Row
+            return conexion
+        except Exception as e:
+            print(f"❌ Error al conectar a SQLite en la nube: {e}")
+            return None
+    else:
+        # --- MODO LOCAL (Tu PC / MySQL / XAMPP) ---
+        try:
+            conexion = pymysql.connect(
+                host="127.0.0.1",
+                port=3306,
+                user="root",
+                password="",
+                database="farmacia_db",
+                connect_timeout=5
+            )
+            return conexion
+        except Exception as e:
+            print(f"❌ Error al conectar a MySQL local: {e}")
+            return None
 
 # Probar conexión inicial
 mi_conexion = conectar_bd()
