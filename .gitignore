@@ -1,6 +1,6 @@
 comprobantes/
 __pycache__/
-*.db
+# *.db
 *.json
 explicaciones_farmacia.txt
 pendientes_farmacia.txt
