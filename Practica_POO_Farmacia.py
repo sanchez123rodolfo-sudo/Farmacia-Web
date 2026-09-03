@@ -50,25 +50,31 @@ def conectar_bd():
             conexion = sqlite3.connect("farmacia.db")
             conexion.row_factory = sqlite3.Row
             
-            # --- AUTO-CREACIÓN DE TABLAS FILTRANDO COMANDOS MYSQL ---
+            # --- AUTO-CREACIÓN DE TABLAS ADAPTANDO SINTAXIS A SQLITE ---
             if os.path.exists("schema.sql"):
                 try:
                     with open("schema.sql", "r", encoding="utf-8") as f:
                         sql_script = f.read()
-                    
-                    # Filtramos CREATE DATABASE y USE que rompen SQLite
-                    lineas_limpias = [
-                        linea for linea in sql_script.splitlines()
-                        if not linea.strip().upper().startswith(("CREATE DATABASE", "USE "))
+
+                    # 1. Filtramos comandos de creación/uso de DB
+                    lineas = [
+                        l for l in sql_script.splitlines()
+                        if not l.strip().upper().startswith(("CREATE DATABASE", "USE "))
                     ]
-                    
-                    sql_filtrado = "\n".join(lineas_limpias)
+                    sql_filtrado = "\n".join(lineas)
+
+                    # 2. Reemplazamos incompatibilidades directas de sintaxis entre MySQL y SQLite
+                    sql_filtrado = sql_filtrado.replace("AUTO_INCREMENT", "AUTOINCREMENT")
+                    sql_filtrado = sql_filtrado.replace("INT AUTOINCREMENT", "INTEGER PRIMARY KEY AUTOINCREMENT")
+                    sql_filtrado = sql_filtrado.replace("ENGINE=InnoDB", "")
+                    sql_filtrado = sql_filtrado.replace("DEFAULT CURRENT_TIMESTAMP()", "DEFAULT CURRENT_TIMESTAMP")
+
                     conexion.executescript(sql_filtrado)
                     conexion.commit()
                     print("⚡ Tablas creadas/verificadas en SQLite desde schema.sql")
                 except Exception as e_schema:
                     print(f"⚠️ Nota al ejecutar schema: {e_schema}")
-            # --------------------------------------------------------
+            # -----------------------------------------------------------
 
             print("⚡ ¡CONEXIÓN EXITOSA A SQLITE EN LA NUBE!")
             return conexion
