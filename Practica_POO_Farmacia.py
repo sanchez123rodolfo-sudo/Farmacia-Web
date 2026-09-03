@@ -29,6 +29,7 @@ class StockConflictError(Exception):
 
 print("1. Iniciando script...")
 
+
 def conectar_bd():
     # 1. Intentamos conectar a MySQL local
     try:
@@ -38,16 +39,28 @@ def conectar_bd():
             user="root",
             password="",
             database="farmacia_db",
-            connect_timeout=2  # Timeout corto: si no responde en 2s, estamos en la nube
+            connect_timeout=2  # Timeout corto
         )
         print("⚡ ¡CONEXIÓN EXITOSA A MYSQL LOCAL!")
         return conexion
     except Exception as e_mysql:
-        # 2. Si MySQL falla (como ocurre en Render), usamos automáticamente SQLite
+        # 2. Si MySQL falla (Render), usamos automáticamente SQLite
         print(f"⚠️ MySQL no disponible ({e_mysql}). Cambiando automáticamente a SQLite (Nube)...")
         try:
-            conexion = sqlite3.connect("farmacia.db") # Asegúrate de que el nombre sea exacto
+            conexion = sqlite3.connect("farmacia.db")
             conexion.row_factory = sqlite3.Row
+            
+            # --- AUTO-CREACIÓN DE TABLAS DESDE SCHEMA.SQL ---
+            if os.path.exists("schema.sql"):
+                try:
+                    with open("schema.sql", "r", encoding="utf-8") as f:
+                        conexion.executescript(f.read())
+                    conexion.commit()
+                    print("⚡ Tablas verificadas/creadas correctamente desde schema.sql")
+                except Exception as e_schema:
+                    print(f"⚠️ Nota al ejecutar schema: {e_schema}")
+            # -----------------------------------------------
+
             print("⚡ ¡CONEXIÓN EXITOSA A SQLITE EN LA NUBE!")
             return conexion
         except Exception as e_sqlite:
@@ -58,24 +71,17 @@ def _es_sqlite(conexion):
     """Determina dinámicamente si la conexión es de SQLite."""
     return isinstance(conexion, sqlite3.Connection)
 
-
 def _adaptar_sql(conexion, sql):
-    """Adapta los placeholders de una sentencia SQL al motor activo.
-
-    MySQL (pymysql) usa `%s`; SQLite usa `?`. Detectamos el motor por el
-    tipo de la conexión y convertimos los marcadores en consecuencia,
-    sin tocar la lógica de negocio.
-    """
+    """Adapta los placeholders de una sentencia SQL al motor activo."""
     if _es_sqlite(conexion):
         return sql.replace("%s", "?")
     return sql
-
 
 # Probar conexión inicial
 mi_conexion = conectar_bd()
 if mi_conexion:
     mi_conexion.close()
-    print("⚡ ¡CONEXIÓN EXITOSA A MYSQL!")
+    print("⚡ ¡CONEXIÓN INICIAL PROBADA EXITOSAMENTE!")
 
 
 def buscar_cliente_bd(documento):
