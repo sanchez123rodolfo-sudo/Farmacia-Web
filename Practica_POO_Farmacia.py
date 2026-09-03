@@ -26,35 +26,32 @@ class StockConflictError(Exception):
 # =========================================================
 
 
+
 print("1. Iniciando script...")
 
 def conectar_bd():
-    # Detecta si estamos ejecutando el código en el servidor de Render
-    is_render = os.environ.get('RENDER') or os.environ.get('IS_RENDER')
-
-    if is_render:
-        # --- MODO NUBE (Render / SQLite) ---
+    # 1. Intentamos conectar a MySQL local
+    try:
+        conexion = pymysql.connect(
+            host="127.0.0.1",
+            port=3306,
+            user="root",
+            password="",
+            database="farmacia_db",
+            connect_timeout=2  # Timeout corto: si no responde en 2s, estamos en la nube
+        )
+        print("⚡ ¡CONEXIÓN EXITOSA A MYSQL LOCAL!")
+        return conexion
+    except Exception as e_mysql:
+        # 2. Si MySQL falla (como ocurre en Render), usamos automáticamente SQLite
+        print(f"⚠️ MySQL no disponible ({e_mysql}). Cambiando automáticamente a SQLite (Nube)...")
         try:
-            conexion = sqlite3.connect("farmacia.db") # Asegúrate del nombre exacto de tu .db
+            conexion = sqlite3.connect("farmacia.db") # Asegúrate de que el nombre sea exacto
             conexion.row_factory = sqlite3.Row
+            print("⚡ ¡CONEXIÓN EXITOSA A SQLITE EN LA NUBE!")
             return conexion
-        except Exception as e:
-            print(f"❌ Error al conectar a SQLite en la nube: {e}")
-            return None
-    else:
-        # --- MODO LOCAL (Tu PC / MySQL / XAMPP) ---
-        try:
-            conexion = pymysql.connect(
-                host="127.0.0.1",
-                port=3306,
-                user="root",
-                password="",
-                database="farmacia_db",
-                connect_timeout=5
-            )
-            return conexion
-        except Exception as e:
-            print(f"❌ Error al conectar a MySQL local: {e}")
+        except Exception as e_sqlite:
+            print(f"❌ Error al conectar a SQLite: {e_sqlite}")
             return None
 
 # Probar conexión inicial
