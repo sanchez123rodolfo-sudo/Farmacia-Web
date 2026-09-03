@@ -39,7 +39,7 @@ def conectar_bd():
             user="root",
             password="",
             database="farmacia_db",
-            connect_timeout=2  # Timeout corto
+            connect_timeout=2  # Timeout corto para local
         )
         print("⚡ ¡CONEXIÓN EXITOSA A MYSQL LOCAL!")
         return conexion
@@ -50,23 +50,32 @@ def conectar_bd():
             conexion = sqlite3.connect("farmacia.db")
             conexion.row_factory = sqlite3.Row
             
-            # --- AUTO-CREACIÓN DE TABLAS DESDE SCHEMA.SQL ---
+            # --- AUTO-CREACIÓN DE TABLAS FILTRANDO COMANDOS MYSQL ---
             if os.path.exists("schema.sql"):
                 try:
                     with open("schema.sql", "r", encoding="utf-8") as f:
-                        conexion.executescript(f.read())
+                        sql_script = f.read()
+                    
+                    # Filtramos CREATE DATABASE y USE que rompen SQLite
+                    lineas_limpias = [
+                        linea for linea in sql_script.splitlines()
+                        if not linea.strip().upper().startswith(("CREATE DATABASE", "USE "))
+                    ]
+                    
+                    sql_filtrado = "\n".join(lineas_limpias)
+                    conexion.executescript(sql_filtrado)
                     conexion.commit()
-                    print("⚡ Tablas verificadas/creadas correctamente desde schema.sql")
+                    print("⚡ Tablas creadas/verificadas en SQLite desde schema.sql")
                 except Exception as e_schema:
                     print(f"⚠️ Nota al ejecutar schema: {e_schema}")
-            # -----------------------------------------------
+            # --------------------------------------------------------
 
             print("⚡ ¡CONEXIÓN EXITOSA A SQLITE EN LA NUBE!")
             return conexion
         except Exception as e_sqlite:
             print(f"❌ Error al conectar a SQLite: {e_sqlite}")
             return None
-
+        
 def _es_sqlite(conexion):
     """Determina dinámicamente si la conexión es de SQLite."""
     return isinstance(conexion, sqlite3.Connection)
