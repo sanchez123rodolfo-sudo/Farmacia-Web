@@ -29,7 +29,6 @@ class StockConflictError(Exception):
 
 print("1. Iniciando script...")
 
-
 def conectar_bd():
     # 1. Intentamos conectar a MySQL local
     try:
@@ -39,42 +38,27 @@ def conectar_bd():
             user="root",
             password="",
             database="farmacia_db",
-            connect_timeout=2  # Timeout corto para local
+            connect_timeout=2
         )
         print("⚡ ¡CONEXIÓN EXITOSA A MYSQL LOCAL!")
         return conexion
     except Exception as e_mysql:
-        # 2. Si MySQL falla (Render), usamos automáticamente SQLite
-        print(f"⚠️ MySQL no disponible ({e_mysql}). Cambiando automáticamente a SQLite (Nube)...")
+        # 2. Si MySQL falla (Render), usamos SQLite con el schema SQLite nativo
+        print(f"⚠️ MySQL no disponible ({e_mysql}). Cambiando a SQLite (Nube)...")
         try:
             conexion = sqlite3.connect("farmacia.db")
             conexion.row_factory = sqlite3.Row
             
-            # --- AUTO-CREACIÓN DE TABLAS ADAPTANDO SINTAXIS A SQLITE ---
-            if os.path.exists("schema.sql"):
+            # --- Carga directa de schema_sqlite.sql ---
+            schema_file = "schema_sqlite.sql" if os.path.exists("schema_sqlite.sql") else "schema.sql"
+            if os.path.exists(schema_file):
                 try:
-                    with open("schema.sql", "r", encoding="utf-8") as f:
-                        sql_script = f.read()
-
-                    # 1. Filtramos comandos de creación/uso de DB
-                    lineas = [
-                        l for l in sql_script.splitlines()
-                        if not l.strip().upper().startswith(("CREATE DATABASE", "USE "))
-                    ]
-                    sql_filtrado = "\n".join(lineas)
-
-                    # 2. Reemplazamos incompatibilidades directas de sintaxis entre MySQL y SQLite
-                    sql_filtrado = sql_filtrado.replace("AUTO_INCREMENT", "AUTOINCREMENT")
-                    sql_filtrado = sql_filtrado.replace("INT AUTOINCREMENT", "INTEGER PRIMARY KEY AUTOINCREMENT")
-                    sql_filtrado = sql_filtrado.replace("ENGINE=InnoDB", "")
-                    sql_filtrado = sql_filtrado.replace("DEFAULT CURRENT_TIMESTAMP()", "DEFAULT CURRENT_TIMESTAMP")
-
-                    conexion.executescript(sql_filtrado)
+                    with open(schema_file, "r", encoding="utf-8") as f:
+                        conexion.executescript(f.read())
                     conexion.commit()
-                    print("⚡ Tablas creadas/verificadas en SQLite desde schema.sql")
+                    print(f"⚡ Tablas cargadas/verificadas desde {schema_file}")
                 except Exception as e_schema:
-                    print(f"⚠️ Nota al ejecutar schema: {e_schema}")
-            # -----------------------------------------------------------
+                    print(f"⚠️ Error al ejecutar {schema_file}: {e_schema}")
 
             print("⚡ ¡CONEXIÓN EXITOSA A SQLITE EN LA NUBE!")
             return conexion
