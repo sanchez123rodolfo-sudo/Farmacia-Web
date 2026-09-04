@@ -676,58 +676,80 @@ def admin_plantilla_csv():
 
 @app.route("/admin/importar-csv", methods=["POST"])
 def admin_importar_csv():
-    """Recibe un archivo CSV, valida filas e inserta medicamentos en masa."""
     if not session.get("usuario"):
         return jsonify({"success": False, "error": "No autorizado"}), 401
 
-    archivo = request.files.get("archivo")
-    if not archivo or not archivo.filename:
-        return jsonify({"success": False, "error": "No se proporcionó ningún archivo."}), 400
+    if "archivo" not in request.files:
+        return jsonify({"success": False, "error": "No se subió ningún archivo"}), 400
 
-    if not archivo.filename.lower().endswith(".csv"):
-        return jsonify({"success": False, "error": "El archivo debe tener extensión .csv"}), 400
+    archivo = request.files["archivo"]
+    if not archivo.filename.endswith(".csv"):
+        return jsonify({"success": False, "error": "Formato no válido. Debe ser .csv"}), 400
+
+    import csv
+    import io
+
+    stream = io.StringIO(archivo.stream.read().decode("utf-8-sig"), newline=None)
+    lector = csv.DictReader(stream)
+
+    insertados = 0
+    duplicados = 0
+    errores = []
+
+    conexion = conectar_bd()
+    if not conexion:
+        return jsonify({"success": False, "error": "Error de conexión a la base de datos"}), 500
 
     try:
-        # Leer el contenido del archivo (soporta UTF-8 y latin-1)
-        contenido_raw = archivo.read()
-        try:
-            contenido = contenido_raw.decode("utf-8")
-        except UnicodeDecodeError:
-            contenido = contenido_raw.decode("latin-1")
+        cursor = conexion.cursor()
+        for i, fila in enumerate(lector, start=2):
+            try:
+                nombre = (fila.get("nombre") or "").strip()
+                precio = float(fila.get("precio") or 0)
+                stock = int(fila.get("stock") or 0)
 
-        lector = csv.DictReader(io.StringIO(contenido), delimiter=",")
+                if not nombre or precio <= 0 or stock < 0:
+                    errores.append(f"Línea {i}: Datos inválidos o incompletos")
+                    continue
 
-        # Verificar que las columnas requeridas existen
-        columnas_requeridas = {"nombre", "stock", "precio"}
-        if not columnas_requeridas.issubset(set(lector.fieldnames or [])):
-            faltantes = columnas_requeridas - set(lector.fieldnames or [])
-            return jsonify({
-                "success": False,
-                "error": f"Faltan columnas requeridas: {', '.join(faltantes)}. "
-                         f"Columnas encontradas: {', '.join(lector.fieldnames or [])}"
-            }), 400
+                receta_val = str(fila.get("requiere_receta", "")).lower() in ("true", "1", "si", "yes")
+                receta = 1 if receta_val else 0
 
-        # Convertir filas a lista de dicts
-        rows = list(lector)
-        if not rows:
-            return jsonify({"success": False, "error": "El archivo CSV está vacío o no tiene datos."}), 400
+                sql = _adaptar_sql(conexion, """
+                    INSERT INTO medicamentos 
+                    (nombre, codigo_barras, precio, stock, fecha_vencimiento, requiere_receta, categoria, laboratorio, componente_generico)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """)
 
-        print(f"📥 CSV recibido: {len(rows)} filas de {archivo.filename}")
+                cursor.execute(sql, (
+                    nombre,
+                    (fila.get("codigo_barras") or "").strip() or None,
+                    precio,
+                    stock,
+                    (fila.get("fecha_vencimiento") or "").strip() or None,
+                    receta,
+                    (fila.get("categoria") or "").strip() or None,
+                    (fila.get("laboratorio") or "").strip() or None,
+                    (fila.get("componente_generico") or "").strip() or None,
+                ))
+                insertados += 1
 
+            except Exception as e:
+                errores.append(f"Línea {i}: {str(e)}")
+
+        conexion.commit()
     except Exception as e:
-        return jsonify({"success": False, "error": f"Error al leer el CSV: {e}"}), 400
-
-    # Insertar en masa
-    insertados, duplicados, errores = importar_medicamentos_csv_bd(rows)
+        conexion.rollback()
+        return jsonify({"success": False, "error": f"Error de base de datos durante la importación: {e}"}), 500
+    finally:
+        conexion.close()
 
     return jsonify({
         "success": True,
         "insertados": insertados,
         "duplicados": duplicados,
-        "errores": errores,
-        "total_filas": len(rows),
-    }), 200
-
+        "errores": errores
+    })
 
 @app.route("/admin/reabastecer", methods=["POST"])
 def admin_reabastecer():
