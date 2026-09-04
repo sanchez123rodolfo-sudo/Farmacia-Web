@@ -661,13 +661,12 @@
       </div>
     </header>
 
-    {% if bd_error %}
+    {% if bd_error and not session.get('sqlite_activo') %}
+    <!-- Esta alerta solo saldrá si NO hay ni MySQL ni SQLite disponible -->
     <section class="panel" style="border-left: 4px solid #dc2626;">
       <h2 style="color:#b91c1c;">Base de datos no disponible</h2>
       <p class="hint">
-        No se pudieron cargar el inventario ni las alertas porque el servidor no pudo
-        conectarse a MySQL. Los datos mostrados abajo pueden estar incompletos.
-        Verifica que el servicio de MySQL esté activo y recarga la página.
+        No se pudieron cargar los datos correctamente. Por favor, verifica el estado del servicio y recarga la página.
       </p>
     </section>
     {% endif %}
