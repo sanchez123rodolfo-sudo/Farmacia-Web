@@ -2,12 +2,22 @@ import json
 from datetime import datetime
 import pymysql
 import os
+import sys
+from contextlib import contextmanager
 import requests
 import traceback
 import os
 import sqlite3
 import pymysql
 from decimal import Decimal, ROUND_HALF_UP  # 👈 ¡NUEVO: Para cálculos de dinero exactos!
+
+# Forzar un manejo de texto UTF-8 en consolas Windows (cp1252) y en Render,
+# para que los emojis/acentos de los prints no rompan el arranque.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 # Excepción personalizada para conflictos de stock en transacciones concurrentes
 class StockConflictError(Exception):
@@ -75,6 +85,96 @@ def _adaptar_sql(conexion, sql):
     if _es_sqlite(conexion):
         return sql.replace("%s", "?")
     return sql
+
+
+@contextmanager
+def _cursor_ctx(conexion):
+    """Context manager de cursor compatible con MySQL (pymysql) y SQLite.
+    sqlite3.Cursor no implementa el protocolo context manager directamente,
+    por eso se crea este wrapper: yield el cursor y lo cierra al salir."""
+    cursor = conexion.cursor()
+    try:
+        yield cursor
+    finally:
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+
+def _adaptar_parametros(conexion, params):
+    """Convierte los tipos no soportados por el motor en tipos nativos.
+    MySQL (pymysql) admite Decimal, pero SQLite NO. Convertimos Decimal a
+    float al pasar parámetros SQLite para evitar sqlite3.ProgrammingError."""
+    if not _es_sqlite(conexion):
+        return params
+    if isinstance(params, (tuple, list)):
+        return tuple(
+            float(p) if isinstance(p, Decimal) else p
+            for p in params
+        )
+    if isinstance(params, Decimal):
+        return float(params)
+    return params
+
+
+def _es_duplicado(conexion, e):
+    """Determina si una excepción de integridad corresponde a una fila duplicada.
+    Funciona tanto para MySQL (pymysql.err.IntegrityError código 1062) como
+    para SQLite (sqlite3.IntegrityError 'UNIQUE constraint failed')."""
+    if _es_sqlite(conexion):
+        mensaje = str(e).lower()
+        return "unique" in mensaje or "constraint" in mensaje or "duplicate" in mensaje
+    try:
+        import pymysql.err
+        if isinstance(e, pymysql.err.IntegrityError):
+            return bool(e.args) and e.args[0] == 1062
+    except Exception:
+        pass
+    return False
+
+
+def _upsert_cliente(conexion, cursor, tipo_doc, doc_cliente, nombre_cliente, direccion):
+    """Inserta o actualiza un cliente de forma compatible con MySQL y SQLite.
+    Devuelve el cliente_id. El número de documento es la clave única.
+
+    IMPORTANTE (SQLite): cuando un INSERT falla por UNIQUE, la transacción
+    queda "abortada" y hay que hacer rollback antes de seguir. Por eso aquí
+    primero comprobamos si el cliente ya existe y solo insertamos si no:
+    así evitamos disparar excepciones de integridad a mitad de transacción."""
+    if _es_sqlite(conexion):
+        cursor.execute(
+            "SELECT id FROM clientes WHERE numero_documento = ?",
+            (doc_cliente,)
+        )
+        fila = cursor.fetchone()
+        if fila:
+            cliente_id = fila[0]
+            cursor.execute(
+                "UPDATE clientes SET nombre_razon_social = ?, "
+                "direccion = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE direccion END "
+                "WHERE id = ?",
+                (nombre_cliente, direccion, direccion, direccion, cliente_id)
+            )
+            return cliente_id
+        cursor.execute(
+            "INSERT INTO clientes (tipo_documento, numero_documento, nombre_razon_social, direccion) "
+            "VALUES (?, ?, ?, ?)",
+            (tipo_doc, doc_cliente, nombre_cliente, direccion)
+        )
+        return cursor.lastrowid
+    else:
+        # MySQL: upsert nativo.
+        cursor.execute(
+            "INSERT INTO clientes (tipo_documento, numero_documento, nombre_razon_social, direccion) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), "
+            "nombre_razon_social=VALUES(nombre_razon_social), "
+            "direccion = IF(VALUES(direccion) IS NOT NULL AND VALUES(direccion) != '', "
+            "VALUES(direccion), direccion)",
+            (tipo_doc, doc_cliente, nombre_cliente, direccion)
+        )
+        return cursor.lastrowid
 
 # Probar conexión inicial
 mi_conexion = conectar_bd()
@@ -887,15 +987,23 @@ def consultar_alertas_bd():
         ]
 
         # Medicamentos por vencer (≤ 30 días desde hoy).
-        # DATEDIFF devuelve días restantes (negativo = ya vencido),
-        # útil para pintar badges de severidad en el panel admin.
-        cursor.execute(
-            _adaptar_sql(conexion,
+        # DATEDIFF / CURDATE / DATE_ADD son específicos de MySQL; SQLite usa
+        # julianday() y date('now'). Generamos la consulta según el motor.
+        if _es_sqlite(conexion):
+            cursor.execute(
+                "SELECT id, nombre, stock, fecha_vencimiento, "
+                "CAST(julianday(fecha_vencimiento) - julianday('now') AS INTEGER) AS dias "
+                "FROM medicamentos WHERE activo = 1 AND fecha_vencimiento IS NOT NULL "
+                "AND fecha_vencimiento <= date('now', '+30 day') "
+                "ORDER BY fecha_vencimiento ASC"
+            )
+        else:
+            cursor.execute(
                 "SELECT id, nombre, stock, fecha_vencimiento, DATEDIFF(fecha_vencimiento, CURDATE()) "
                 "FROM medicamentos WHERE activo = 1 AND fecha_vencimiento IS NOT NULL "
                 "AND fecha_vencimiento <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) "
-                "ORDER BY fecha_vencimiento ASC")
-        )
+                "ORDER BY fecha_vencimiento ASC"
+            )
         por_vencer = [
             {"id": f[0], "nombre": f[1], "stock": int(f[2]), "fecha_vencimiento": str(f[3]),
              "dias_restantes": int(f[4])}
@@ -951,12 +1059,22 @@ def reporte_ganancias_filtrado_bd(mes=None, anio=None):
     try:
         condiciones = []
         params = []
-        if anio:
-            condiciones.append("YEAR(fecha) = %s")
-            params.append(int(anio))
-        if mes:
-            condiciones.append("MONTH(fecha) = %s")
-            params.append(int(mes))
+        if _es_sqlite(conexion):
+            # SQLite: strftime para extraer mes/año de la fecha.
+            if anio:
+                condiciones.append("CAST(strftime('%Y', fecha) AS INTEGER) = ?")
+                params.append(int(anio))
+            if mes:
+                condiciones.append("CAST(strftime('%m', fecha) AS INTEGER) = ?")
+                params.append(int(mes))
+        else:
+            # MySQL: YEAR()/MONTH() nativos.
+            if anio:
+                condiciones.append("YEAR(fecha) = %s")
+                params.append(int(anio))
+            if mes:
+                condiciones.append("MONTH(fecha) = %s")
+                params.append(int(mes))
 
         where = (" WHERE " + " AND ".join(condiciones)) if condiciones else ""
 
@@ -1180,18 +1298,22 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
         if monto_pagado < total_carrito:
             raise ValueError("monto_pagado no puede ser menor que el total de la venta.")
 
-    # Conecta a la base de datos MySQL.
+    # Conecta a la base de datos (MySQL local o SQLite en la nube).
     conexion = conectar_bd()
     if not conexion:
         # Si no hay conexión, devolvemos None para indicar fallo.
         return None
 
-    # DEBUG: verificar a qué base de datos real se está conectando.
-    print(f"DEBUG: Conectando a host={conexion.host}, db={conexion.db}, user={conexion.user}")
+    # DEBUG: verificar a qué motor real se está conectando (sin tocar atributos
+    # que solo existen en MySQL, como host/db/user, que SQLite no tiene).
+    print(f"DEBUG: Motor activo = {'SQLite' if _es_sqlite(conexion) else 'MySQL'}")
 
     try:
-        # Iniciamos la transacción en MySQL para que todas las operaciones sean atómicas.
-        conexion.begin()
+        # Transacción atómica.
+        # - SQLite: por defecto abre la transacción con la primera sentencia de
+        #   escritura (isolation_level='' ) y commit/rollback la cierran.
+        # - MySQL: pymysql inicia la transacción automáticamente; begin() no
+        #   está disponible en sqlite3.Connection, por eso NO lo llamamos.
         cursor = conexion.cursor()
         try:
             # ── Documento del cliente (opcional para NOTA_VENTA) ──
@@ -1204,17 +1326,6 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 tipo_doc = "DNI"
                 doc_cliente = "00000000"  # placeholder para ventas sin documento
 
-            # Inserta el cliente o actualiza su nombre si ya existía.
-            cursor.execute(
-                _adaptar_sql(conexion,
-                    "INSERT INTO clientes (tipo_documento, numero_documento, nombre_razon_social, direccion) "
-                    "VALUES (%s, %s, %s, %s) "
-                    "ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), nombre_razon_social=VALUES(nombre_razon_social), "
-                    "direccion = IF(VALUES(direccion) IS NOT NULL AND VALUES(direccion) != '', VALUES(direccion), direccion);"),
-                (tipo_doc, doc_cliente, nombre_cliente, direccion)
-            )
-            cliente_id = cursor.lastrowid
-
             # Fijamos el factor del IGV peruano.
             divisor_igv = Decimal("1.18")
 
@@ -1225,44 +1336,61 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                 serie = "NV01"
             else:
                 serie = "B001"
-            # Obtenemos el siguiente número correlativo para la serie.
-            cursor.execute(_adaptar_sql(conexion, "SELECT COALESCE(MAX(correlativo), 0) + 1 FROM comprobantes WHERE serie = %s"), (serie,))#coalesce, si el resultado es valido,lo deja pasar, si es null, comienza desde (0)
-            correlativo = cursor.fetchone()[0]#fetchone() devuelve una tupla, por eso se accede al primer elemento con [0] entra al primer casillero de esa tupla y saca el número puro del correlativo
 
             # Calculamos el subtotal base antes del IGV y el IGV como la diferencia.
             subtotal = (total_carrito / divisor_igv).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             igv = (total_carrito - subtotal).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-            # Insertamos el comprobante principal en la tabla comprobantes,
-            # incluyendo los datos de pago: método, monto cobrado y operación (Yape/voucher).
-            #
             # ── Correlativo a prueba de carreras ──
             # Dos cajas simultáneas pueden calcular el mismo MAX+1. Con el
             # índice UNIQUE (serie, correlativo), la venta perdedora recibe
-            # el error 1062 de MySQL y REINTENTA con el siguiente número
-            # libre, sin abortar ni duplicar comprobantes.
-            datos_venta = (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total_carrito, metodo_pago, monto_pagado, numero_operacion)
+            # un error de integridad (1062 en MySQL, UNIQUE constraint en
+            # SQLite) y REINTENTA con el siguiente número libre, sin abortar
+            # ni duplicar comprobantes.
+            #
+            # IMPORTANTE SQLite: un INSERT fallido por UNIQUE deja la
+            # transacción "abortada"; hay que hacer rollback antes de seguir.
+            # Por eso, dentro de cada reintento se hace rollback (deshace el
+            # cliente insertado) y se vuelve a ejecutar el upsert del cliente
+            # junto con el nuevo correlativo, dentro de la misma transacción.
             intentos_correlativo = 0
             while True:
                 try:
+                    # Inserta/actualiza el cliente (upsert compatible con ambos motores).
+                    cliente_id = _upsert_cliente(conexion, cursor, tipo_doc, doc_cliente, nombre_cliente, direccion)
+
+                    # Obtenemos el siguiente número correlativo para la serie.
+                    cursor.execute(
+                        _adaptar_sql(conexion,
+                            "SELECT COALESCE(MAX(correlativo), 0) + 1 FROM comprobantes WHERE serie = %s"),
+                        (serie,)
+                    )
+                    correlativo = cursor.fetchone()[0]
+
+                    # Insertamos el comprobante principal.
+                    # _adaptar_parametros convierte Decimal a float para SQLite.
+                    datos_venta = (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total_carrito, metodo_pago, monto_pagado, numero_operacion)
                     cursor.execute(
                         _adaptar_sql(conexion,
                             "INSERT INTO comprobantes (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total, metodo_pago, monto_pagado, numero_operacion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"),
-                        datos_venta
+                        _adaptar_parametros(conexion, datos_venta)
                     )
                     break
-                except pymysql.err.IntegrityError as e_dup:
-                    es_duplicado = e_dup.args and e_dup.args[0] == 1062
+                except Exception as e_dup:
+                    es_duplicado = _es_duplicado(conexion, e_dup)
                     if not es_duplicado or intentos_correlativo >= 5:
                         raise  # no es colisión de correlativo, o se agotaron los intentos
                     intentos_correlativo += 1
                     print(f"⚠️ Correlativo {serie}-{correlativo} en conflicto por venta simultánea; reintentando ({intentos_correlativo}/5)...")
-                    cursor.execute(
-                        _adaptar_sql(conexion, "SELECT COALESCE(MAX(correlativo), 0) + 1 FROM comprobantes WHERE serie = %s"),
-                        (serie,)
-                    )
-                    correlativo = cursor.fetchone()[0]
-                    datos_venta = (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total_carrito, metodo_pago, monto_pagado, numero_operacion)
+                    # SQLite: rollback para salir del estado "aborted" de la
+                    # transacción antes de reintentar. Esto deshace el INSERT
+                    # del cliente, que se volverá a hacer en el siguiente ciclo.
+                    if _es_sqlite(conexion):
+                        conexion.rollback()
+                    else:
+                        # MySQL: sin rollback explícito aquí para no perder el
+                        # cliente; MAX+1 ya produce el siguiente libre.
+                        pass
             # Obtenemos el id del comprobante creado.
             comprobante_id = cursor.lastrowid #guardamos el id del comprobante para relacionarlo con los detalles de la venta.
 
@@ -1327,19 +1455,19 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                         "(comprobante_id, medicamento_id, cantidad, precio_unitario, subtotal_linea, "
                         "presentacion_id, presentacion_nombre, factor) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"),
-                    (
+                    _adaptar_parametros(conexion, (
                         comprobante_id, medicamento_id, item["cantidad"], float(precio_a_cobrar), subtotal_real,
                         presentacion_id,
                         presentacion.get("nombre") if presentacion else "Unidad",
                         float(factor),
-                    )
+                    ))
                 )
-                # Actualiza el stock y las ventas_totales de ese medicamento en MySQL.
+                # Actualiza el stock y las ventas_totales de ese medicamento.
                 # El WHERE incluye validación de stock suficiente para evitar stock negativo.
                 cursor.execute(
                     _adaptar_sql(conexion,
                         "UPDATE medicamentos SET stock = stock - %s, ventas_totales = ventas_totales + %s WHERE id = %s AND stock >= %s;"),
-                    (unidades_a_descontar, subtotal_real, medicamento_id, unidades_a_descontar)
+                    _adaptar_parametros(conexion, (unidades_a_descontar, subtotal_real, medicamento_id, unidades_a_descontar))
                 )
                 if cursor.rowcount == 0:
                     raise StockConflictError(
