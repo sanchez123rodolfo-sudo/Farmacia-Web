@@ -559,13 +559,17 @@ def admin():
                            meds_data_json=json.dumps(meds_data, ensure_ascii=False))
 
 
-@app.route("/admin/registrar", methods=["POST"])
+@app.route("/admin/registrar", methods=["GET", "POST"])
 def admin_registrar():
-    """Registra un nuevo medicamento en MySQL (Panel de Administrador)."""
+    """Registra un nuevo medicamento en el sistema (Panel de Administrador)."""
     if not session.get("usuario"):
         return jsonify({"success": False, "error": "No autorizado"}), 401
 
-    data = request.get_json(silent=True) or request.form
+    # Si el frontend consulta la ruta al cargar la página sin enviar datos, no disparamos error 400
+    data = request.get_json(silent=True) or request.form or {}
+    if request.method == "GET" or not data:
+        return jsonify({"success": True, "message": "Ruta lista para registros"}), 200
+
     nombre = (data.get("nombre") or "").strip()
     categoria = (data.get("categoria") or "").strip()
     componente = (data.get("componente") or "").strip()
@@ -593,8 +597,6 @@ def admin_registrar():
         return jsonify({"success": False, "error": "El stock no puede ser negativo."}), 400
 
     # ── Presentación principal (opcional) ──
-    # El medicamento SIEMPRE se registra por unidad mínima. Si el usuario
-    # declara una presentación, se crea vinculada al nuevo medicamento.
     nombre_presentacion = (data.get("nombre_presentacion") or "").strip()
     factor_presentacion = None
     precio_presentacion = None
@@ -602,12 +604,12 @@ def admin_registrar():
             or data.get("factor_presentacion") not in (None, "")
             or data.get("precio_presentacion") not in (None, "")):
         if not nombre_presentacion:
-            return jsonify({"success": False, "error": "Si declaras factor o precio de presentación, el nombre de la presentación es obligatorio."}), 400
+            return jsonify({"success": False, "error": "Si declaras factor o precio de presentación, el nombre es obligatorio."}), 400
         try:
             factor_presentacion = float(data.get("factor_presentacion") or 0)
             precio_presentacion = float(data.get("precio_presentacion") or 0)
         except Exception:
-            return jsonify({"success": False, "error": "factor y precio de presentación deben ser numéricos."}), 400
+            return jsonify({"success": False, "error": "factor y precio deben ser numéricos."}), 400
         if factor_presentacion < 1:
             return jsonify({"success": False, "error": "El factor de la presentación debe ser 1 o más."}), 400
         if precio_presentacion <= 0:
@@ -621,19 +623,15 @@ def admin_registrar():
             "precio": precio_presentacion,
         }
 
-    # Medicamento + presentación se insertan en UNA misma transacción:
-    # si algo falla, la capa BD hace rollback y no queda nada a medias.
     ok, resultado = registrar_medicamento_bd(
         nombre, categoria, componente, laboratorio, precio, stock,
         requiere_receta, codigo_barras, fecha_vencimiento,
         presentacion=presentacion_data,
     )
     if not ok:
-        # Ej: nombre duplicado (clave única) u otro error de MySQL.
         return jsonify({"success": False, "error": resultado}), 400
 
     return jsonify({"success": True, "id": resultado, "nombre": nombre}), 201
-
 
 @app.route("/admin/alertas", methods=["GET"])
 def admin_alertas():
