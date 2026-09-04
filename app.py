@@ -529,21 +529,28 @@ def admin():
     """Panel de Administrador (gestión de inventario). Requiere sesión."""
     if not session.get("usuario"):
         return redirect(url_for("login"))
-    # Si la BD está caída NO se disfraza de 'inventario vacío': se marca
-    # bd_error para que la plantilla muestre un banner bien visible.
+
     bd_error = False
+    
+    # 1. Intentamos listar medicamentos
     try:
         medicamentos = listar_medicamentos_bd()
+    except Exception as e:
+        print(f"[admin] Error al listar medicamentos: {e}")
+        medicamentos = []
+        bd_error = True
+
+    # 2. Intentamos cargar alertas sin romper la página si falla
+    try:
         alertas = consultar_alertas_bd()
     except Exception as e:
-        print(f"[admin] {type(e).__name__}: {e}")
-        traceback.print_exc()
-        medicamentos = []
+        print(f"[admin] Error al consultar alertas: {e}")
         alertas = {"stock_bajo": [], "por_vencer": []}
-        bd_error = True
-    # Datos livianos para el gestor visual de presentaciones (admin.html).
-    # Se arma un dict plano para que json.dumps no falle con fechas de MySQL
-    # (datetime.date no es serializable) y para no exponer campos innecesarios.
+
+    # Si la lista de medicamentos cargó bien (aunque esté vacía []), la BD está sana
+    if medicamentos is not None and not bd_error:
+        bd_error = False
+
     meds_data = [
         {
             "id": m["id"],
@@ -552,7 +559,7 @@ def admin():
             "stock": m["stock"],
             "presentaciones": m.get("presentaciones", []),
         }
-        for m in medicamentos
+        for m in (medicamentos or [])
     ]
     return render_template("admin.html", usuario=session.get("usuario"),
                            medicamentos=medicamentos, alertas=alertas, bd_error=bd_error,
