@@ -715,9 +715,12 @@ def admin_importar_csv():
                 receta_val = str(fila.get("requiere_receta", "")).lower() in ("true", "1", "si", "yes")
                 receta = 1 if receta_val else 0
 
+                # Leemos 'componente_generico' o 'componente' del CSV pero insertamos en la columna 'componente'
+                comp = (fila.get("componente_generico") or fila.get("componente") or "").strip() or None
+
                 sql = _adaptar_sql(conexion, """
                     INSERT INTO medicamentos 
-                    (nombre, codigo_barras, precio, stock, fecha_vencimiento, requiere_receta, categoria, laboratorio, componente_generico)
+                    (nombre, codigo_barras, precio, stock, fecha_vencimiento, requiere_receta, categoria, laboratorio, componente)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """)
 
@@ -730,7 +733,7 @@ def admin_importar_csv():
                     receta,
                     (fila.get("categoria") or "").strip() or None,
                     (fila.get("laboratorio") or "").strip() or None,
-                    (fila.get("componente_generico") or "").strip() or None,
+                    comp,
                 ))
                 insertados += 1
 
@@ -750,7 +753,6 @@ def admin_importar_csv():
         "duplicados": duplicados,
         "errores": errores
     })
-
 @app.route("/admin/reabastecer", methods=["POST"])
 def admin_reabastecer():
     """Suma unidades al stock actual de un medicamento (Panel de Administrador)."""
