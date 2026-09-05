@@ -47,9 +47,16 @@ print("1. Iniciando script...")
 
 
 def _obtener_url_database():
-    """Devuelve la URI de PostgreSQL desde DATABASE_URL o None."""
+    """Devuelve la URI de PostgreSQL desde DATABASE_URL o None.
+
+    Traduce el prefijo antiguo de Heroku/Render (`postgres://`) al formato
+    moderno que psycopg2 espera (`postgresql://`)."""
     url = (os.getenv("DATABASE_URL") or "").strip()
-    return url or None
+    if not url:
+        return None
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
 
 
 def _dividir_sentencias_sql(sql):
@@ -103,31 +110,40 @@ def conectar_bd():
       3. SQLite local como RESPALDO final (solo si los anteriores fallan).
 
       Devolverá el objeto de conexión del primer motor que funcione, o None si
-      todos fallan. SQLite ya no es el destino por defecto de la nube."""
-    # ── 1. POSTGRESQL (prioridad si DATABASE_URL existe) ──────────────
+      todos fallan. SQLite ya no es el destino por defecto de la nube.
+
+      IMPORTANTE: si DATABASE_URL está definida (Render/Supabase), solo se usa
+      PostgreSQL. MySQL/SQLite únicamente se intentan cuando DATABASE_URL NO
+      existe (entorno local de desarrollo)."""
+    # ── 1. POSTGRESQL (uso EXCLUSIVO si DATABASE_URL existe) ──────────
     database_url = _obtener_url_database()
     if database_url:
         if psycopg2 is None:
             print("⚠️ DATABASE_URL está definida pero psycopg2 no está instalado. "
                   "Ejecuta: pip install psycopg2-binary")
-        else:
-            # Supabase/Render suelen exigir SSL. Si la URI no trae sslmode,
-            # reintentamos automáticamente con sslmode=require.
-            urls_a_probar = [database_url]
-            if "sslmode" not in database_url.lower():
-                separador = "&" if "?" in database_url else "?"
-                urls_a_probar.append(f"{database_url}{separador}sslmode=require")
-            for url in urls_a_probar:
-                try:
-                    conexion = psycopg2.connect(url, connect_timeout=5)
-                    conexion.autocommit = False
-                    _cargar_schema_postgres(conexion)
-                    print("⚡ ¡CONEXIÓN EXITOSA A POSTGRESQL (RENDER/SUPABASE)!")
-                    return conexion
-                except Exception as e_pg:
-                    print(f"⚠️ PostgreSQL no disponible ({e_pg}). Probando otros motores...")
+            return None
+        # Supabase/Render suelen exigir SSL. Si la URI no trae sslmode,
+        # reintentamos automáticamente con sslmode=require.
+        ultimo_error = None
+        urls_a_probar = [database_url]
+        if "sslmode" not in database_url.lower():
+            separador = "&" if "?" in database_url else "?"
+            urls_a_probar.append(f"{database_url}{separador}sslmode=require")
+        for url in urls_a_probar:
+            try:
+                conexion = psycopg2.connect(url, connect_timeout=5)
+                conexion.autocommit = False
+                _cargar_schema_postgres(conexion)
+                print("⚡ ¡CONEXIÓN EXITOSA A POSTGRESQL (RENDER/SUPABASE)!")
+                return conexion
+            except Exception as e_pg:
+                ultimo_error = e_pg
+                print(f"⚠️ PostgreSQL no disponible ({e_pg}).")
+        # DATABASE_URL existe pero no se pudo conectar a PostgreSQL:
+        # NO caer a MySQL/SQLite; informar del error de conexión.
+        return None
 
-    # ── 2. MYSQL LOCAL ────────────────────────────────────────────────
+    # ── 2. MYSQL LOCAL (solo si DATABASE_URL NO está definida) ────────
     try:
         conexion = pymysql.connect(
             host="127.0.0.1",
@@ -142,12 +158,12 @@ def conectar_bd():
     except Exception as e_mysql:
         print(f"⚠️ MySQL no disponible ({e_mysql}). Probando SQLite (respaldo)...")
 
-    # ── 3. SQLITE (RESPALDO FINAL) ────────────────────────────────────
+    # ── 3. SQLITE (RESPALDO FINAL, entorno local) ─────────────────────
     try:
         conexion = sqlite3.connect("farmacia.db")
         conexion.row_factory = sqlite3.Row
         _cargar_schema_sqlite(conexion)
-        print("⚡ ¡CONEXIÓN EXITOSA A SQLITE (RESPALDO) EN LA NUBE!")
+        print("⚡ ¡CONEXIÓN EXITOSA A SQLITE (RESPALDO) LOCAL!")
         return conexion
     except Exception as e_sqlite:
         print(f"❌ Error al conectar a SQLite: {e_sqlite}")
