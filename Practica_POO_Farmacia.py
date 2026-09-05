@@ -6,10 +6,16 @@ import sys
 from contextlib import contextmanager
 import requests
 import traceback
-import os
 import sqlite3
-import pymysql
 from decimal import Decimal, ROUND_HALF_UP  # 👈 ¡NUEVO: Para cálculos de dinero exactos!
+
+# psycopg2 (PostgreSQL) se importa de forma perezosa (lazy). Si no está
+# instalado o no se usa DATABASE_URL, el arranque no debe romperse: el
+# resto del sistema sigue funcionando con MySQL y/o SQLite.
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
 
 # Forzar un manejo de texto UTF-8 en consolas Windows (cp1252) y en Render,
 # para que los emojis/acentos de los prints no rompan el arranque.
@@ -39,8 +45,89 @@ class StockConflictError(Exception):
 
 print("1. Iniciando script...")
 
+
+def _obtener_url_database():
+    """Devuelve la URI de PostgreSQL desde DATABASE_URL o None."""
+    url = (os.getenv("DATABASE_URL") or "").strip()
+    return url or None
+
+
+def _dividir_sentencias_sql(sql):
+    """Divide un script SQL en sentencias individuales.
+    Quita los comentarios de línea (`-- ...`) y descarta trozos vacíos.
+    psycopg2 no ejecuta varios statements de una vez, por eso se dividen."""
+    lineas_limpias = []
+    for linea in sql.splitlines():
+        idx = linea.find("--")
+        if idx != -1:
+            linea = linea[:idx]
+        lineas_limpias.append(linea)
+    texto = "\n".join(lineas_limpias)
+    return [parte.strip() for parte in texto.split(";") if parte.strip()]
+
+
+def _cargar_schema_sqlite(conexion):
+    """Carga/verifica el schema en una base SQLite (no-op si no existe el archivo)."""
+    schema_file = "schema_sqlite.sql" if os.path.exists("schema_sqlite.sql") else "schema.sql"
+    if os.path.exists(schema_file):
+        with open(schema_file, "r", encoding="utf-8") as f:
+            conexion.executescript(f.read())
+        conexion.commit()
+        print(f"⚡ Tablas cargadas/verificadas desde {schema_file}")
+
+
+def _cargar_schema_postgres(conexion):
+    """Crea las tablas en PostgreSQL desde schema_postgres.sql (si existe).
+    Es idempotente (CREATE TABLE IF NOT EXISTS) y tolerante a que el schema
+    ya exista en Supabase/Render."""
+    schema_file = "schema_postgres.sql"
+    if not os.path.exists(schema_file):
+        return
+    with open(schema_file, "r", encoding="utf-8") as f:
+        sql = f.read()
+    cursor = conexion.cursor()
+    try:
+        for bloque in _dividir_sentencias_sql(sql):
+            if bloque:
+                cursor.execute(bloque)
+    finally:
+        cursor.close()
+    conexion.commit()
+    print(f"⚡ Tablas cargadas/verificadas desde {schema_file}")
+
+
 def conectar_bd():
-    # 1. Intentamos conectar a MySQL local
+    """Conecta a la base de datos priorizando el motor correcto:
+      1. PostgreSQL (psycopg2) si DATABASE_URL está definida (Render/Supabase).
+      2. MySQL local (pymysql).
+      3. SQLite local como RESPALDO final (solo si los anteriores fallan).
+
+      Devolverá el objeto de conexión del primer motor que funcione, o None si
+      todos fallan. SQLite ya no es el destino por defecto de la nube."""
+    # ── 1. POSTGRESQL (prioridad si DATABASE_URL existe) ──────────────
+    database_url = _obtener_url_database()
+    if database_url:
+        if psycopg2 is None:
+            print("⚠️ DATABASE_URL está definida pero psycopg2 no está instalado. "
+                  "Ejecuta: pip install psycopg2-binary")
+        else:
+            # Supabase/Render suelen exigir SSL. Si la URI no trae sslmode,
+            # reintentamos automáticamente con sslmode=require.
+            urls_a_probar = [database_url]
+            if "sslmode" not in database_url.lower():
+                separador = "&" if "?" in database_url else "?"
+                urls_a_probar.append(f"{database_url}{separador}sslmode=require")
+            for url in urls_a_probar:
+                try:
+                    conexion = psycopg2.connect(url, connect_timeout=5)
+                    conexion.autocommit = False
+                    _cargar_schema_postgres(conexion)
+                    print("⚡ ¡CONEXIÓN EXITOSA A POSTGRESQL (RENDER/SUPABASE)!")
+                    return conexion
+                except Exception as e_pg:
+                    print(f"⚠️ PostgreSQL no disponible ({e_pg}). Probando otros motores...")
+
+    # ── 2. MYSQL LOCAL ────────────────────────────────────────────────
     try:
         conexion = pymysql.connect(
             host="127.0.0.1",
@@ -53,35 +140,35 @@ def conectar_bd():
         print("⚡ ¡CONEXIÓN EXITOSA A MYSQL LOCAL!")
         return conexion
     except Exception as e_mysql:
-        # 2. Si MySQL falla (Render), usamos SQLite con el schema SQLite nativo
-        print(f"⚠️ MySQL no disponible ({e_mysql}). Cambiando a SQLite (Nube)...")
-        try:
-            conexion = sqlite3.connect("farmacia.db")
-            conexion.row_factory = sqlite3.Row
-            
-            # --- Carga directa de schema_sqlite.sql ---
-            schema_file = "schema_sqlite.sql" if os.path.exists("schema_sqlite.sql") else "schema.sql"
-            if os.path.exists(schema_file):
-                try:
-                    with open(schema_file, "r", encoding="utf-8") as f:
-                        conexion.executescript(f.read())
-                    conexion.commit()
-                    print(f"⚡ Tablas cargadas/verificadas desde {schema_file}")
-                except Exception as e_schema:
-                    print(f"⚠️ Error al ejecutar {schema_file}: {e_schema}")
+        print(f"⚠️ MySQL no disponible ({e_mysql}). Probando SQLite (respaldo)...")
 
-            print("⚡ ¡CONEXIÓN EXITOSA A SQLITE EN LA NUBE!")
-            return conexion
-        except Exception as e_sqlite:
-            print(f"❌ Error al conectar a SQLite: {e_sqlite}")
-            return None
-        
+    # ── 3. SQLITE (RESPALDO FINAL) ────────────────────────────────────
+    try:
+        conexion = sqlite3.connect("farmacia.db")
+        conexion.row_factory = sqlite3.Row
+        _cargar_schema_sqlite(conexion)
+        print("⚡ ¡CONEXIÓN EXITOSA A SQLITE (RESPALDO) EN LA NUBE!")
+        return conexion
+    except Exception as e_sqlite:
+        print(f"❌ Error al conectar a SQLite: {e_sqlite}")
+        return None
+
+
 def _es_sqlite(conexion):
     """Determina dinámicamente si la conexión es de SQLite."""
     return isinstance(conexion, sqlite3.Connection)
 
+
+def _es_postgres(conexion):
+    """Determina dinámicamente si la conexión es de PostgreSQL."""
+    if psycopg2 is None:
+        return False
+    return isinstance(conexion, psycopg2.extensions.connection)
+
+
 def _adaptar_sql(conexion, sql):
-    """Adapta los placeholders de una sentencia SQL al motor activo."""
+    """Adapta los placeholders de una sentencia SQL al motor activo.
+    MySQL y PostgreSQL usan %s; solo SQLite usa ?."""
     if _es_sqlite(conexion):
         return sql.replace("%s", "?")
     return sql
@@ -120,11 +207,20 @@ def _adaptar_parametros(conexion, params):
 
 def _es_duplicado(conexion, e):
     """Determina si una excepción de integridad corresponde a una fila duplicada.
-    Funciona tanto para MySQL (pymysql.err.IntegrityError código 1062) como
-    para SQLite (sqlite3.IntegrityError 'UNIQUE constraint failed')."""
+    Funciona para MySQL (pymysql.err.IntegrityError código 1062), SQLite
+    (sqlite3.IntegrityError 'UNIQUE constraint failed') y PostgreSQL
+    (psycopg2.errors.UniqueViolation, SQLSTATE 23505)."""
     if _es_sqlite(conexion):
         mensaje = str(e).lower()
         return "unique" in mensaje or "constraint" in mensaje or "duplicate" in mensaje
+    if _es_postgres(conexion):
+        try:
+            if str(getattr(e, "pgcode", "")) == "23505":
+                return True
+        except Exception:
+            pass
+        mensaje = str(e).lower()
+        return "unique" in mensaje or "duplicate key" in mensaje or "duplicate_key" in mensaje.replace(" ", "_")
     try:
         import pymysql.err
         if isinstance(e, pymysql.err.IntegrityError):
@@ -163,6 +259,21 @@ def _upsert_cliente(conexion, cursor, tipo_doc, doc_cliente, nombre_cliente, dir
             (tipo_doc, doc_cliente, nombre_cliente, direccion)
         )
         return cursor.lastrowid
+    elif _es_postgres(conexion):
+        # PostgreSQL: ON CONFLICT ... DO UPDATE ... RETURNING id.
+        # Devuelve el id ya sea que inserte o actualice (upsert en un paso).
+        cursor.execute(
+            "INSERT INTO clientes (tipo_documento, numero_documento, nombre_razon_social, direccion) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (numero_documento) DO UPDATE SET "
+            "nombre_razon_social = EXCLUDED.nombre_razon_social, "
+            "direccion = CASE WHEN EXCLUDED.direccion IS NOT NULL AND EXCLUDED.direccion != '' "
+            "THEN EXCLUDED.direccion ELSE clientes.direccion END "
+            "RETURNING id",
+            (tipo_doc, doc_cliente, nombre_cliente, direccion)
+        )
+        fila = cursor.fetchone()
+        return fila[0]
     else:
         # MySQL: upsert nativo.
         cursor.execute(
@@ -406,25 +517,14 @@ def pedir_numero(mensaje, tipo=int):
 
 
 def guardar_medicamento_bd(medicamento):
-    # Intenta establecer conexión con la base de datos MySQL.
+    # Intenta establecer conexión con la base de datos activa.
     conexion = conectar_bd()
     if conexion:
         cursor = conexion.cursor()
         try:
             # Preparamos la sentencia SQL para insertar o actualizar el medicamento.
             # Si el nombre choca con una clave única, actualizamos los valores existentes.
-            sql = """
-                INSERT INTO medicamentos (nombre, componente, laboratorio, precio, stock, requiere_receta, ventas_totales, activo, unidades_por_blister, precio_blister)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    stock = VALUES(stock),
-                    precio = VALUES(precio),
-                    requiere_receta = VALUES(requiere_receta),
-                    ventas_totales = VALUES(ventas_totales),
-                    unidades_por_blister = VALUES(unidades_por_blister),
-                    precio_blister = VALUES(precio_blister)
-                """
-            cursor.execute(_adaptar_sql(conexion, sql), (
+            datos = (
                 medicamento.nombre,
                 medicamento.componente,
                 medicamento.laboratorio,
@@ -434,10 +534,50 @@ def guardar_medicamento_bd(medicamento):
                 medicamento.ventas_totales,
                 medicamento.unidades_por_blister,
                 medicamento.precio_blister,
-            ))
+            )
+            if _es_postgres(conexion):
+                sql = """
+                    INSERT INTO medicamentos (nombre, componente, laboratorio, precio, stock, requiere_receta, ventas_totales, activo, unidades_por_blister, precio_blister)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+                    ON CONFLICT (nombre) DO UPDATE SET
+                        stock = EXCLUDED.stock,
+                        precio = EXCLUDED.precio,
+                        requiere_receta = EXCLUDED.requiere_receta,
+                        ventas_totales = EXCLUDED.ventas_totales,
+                        unidades_por_blister = EXCLUDED.unidades_por_blister,
+                        precio_blister = EXCLUDED.precio_blister
+                    """
+            elif _es_sqlite(conexion):
+                # SQLite: la columna `activo` se mantiene, pero éste upsert
+                # no es usado por la web; se emula con INSERT OR REPLACE.
+                sql = """
+                    INSERT INTO medicamentos (nombre, componente, laboratorio, precio, stock, requiere_receta, ventas_totales, activo, unidades_por_blister, precio_blister)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    ON CONFLICT (nombre) DO UPDATE SET
+                        stock = excluded.stock,
+                        precio = excluded.precio,
+                        requiere_receta = excluded.requiere_receta,
+                        ventas_totales = excluded.ventas_totales,
+                        unidades_por_blister = excluded.unidades_por_blister,
+                        precio_blister = excluded.precio_blister
+                    """
+                cursor.execute(sql, datos)
+            else:
+                sql = """
+                    INSERT INTO medicamentos (nombre, componente, laboratorio, precio, stock, requiere_receta, ventas_totales, activo, unidades_por_blister, precio_blister)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        stock = VALUES(stock),
+                        precio = VALUES(precio),
+                        requiere_receta = VALUES(requiere_receta),
+                        ventas_totales = VALUES(ventas_totales),
+                        unidades_por_blister = VALUES(unidades_por_blister),
+                        precio_blister = VALUES(precio_blister)
+                    """
+                cursor.execute(_adaptar_sql(conexion, sql), datos)
             # Guardamos los cambios en la base de datos.
             conexion.commit()
-            print(f"💾 '{medicamento.nombre}' guardado en MySQL correctamente.")
+            print(f"💾 '{medicamento.nombre}' guardado en BD correctamente.")
         except Exception as e:
             # Si ocurre cualquier error durante la operación, lo mostramos.
             print(f"❌ Error al guardar en la BD: {e}")
@@ -621,26 +761,31 @@ def registrar_presentacion_bd(medicamento_id, nombre, factor, precio):
         if not fila_med[0]:
             return False, "El medicamento está descontinuado: no admite nuevas presentaciones."
 
-        cursor.execute(
-            _adaptar_sql(conexion,
+        if _es_postgres(conexion):
+            cursor.execute(
                 "INSERT INTO presentaciones (medicamento_id, nombre, factor, precio) "
-                "VALUES (%s, %s, %s, %s)"),
-            (medicamento_id, nombre, float(factor_dec), float(precio_dec))
-        )
-        nuevo_id = cursor.lastrowid
+                "VALUES (%s, %s, %s, %s) RETURNING id",
+                (medicamento_id, nombre, float(factor_dec), float(precio_dec))
+            )
+            nuevo_id = cursor.fetchone()[0]
+        else:
+            cursor.execute(
+                _adaptar_sql(conexion,
+                    "INSERT INTO presentaciones (medicamento_id, nombre, factor, precio) "
+                    "VALUES (%s, %s, %s, %s)"),
+                (medicamento_id, nombre, float(factor_dec), float(precio_dec))
+            )
+            nuevo_id = cursor.lastrowid
         cursor.close()
         conexion.commit()
         print(f"✅ Presentación '{nombre}' (x{factor_dec}) registrada para medicamento id={medicamento_id}.")
         return True, nuevo_id
-    except pymysql.err.IntegrityError as e_dup:
+    except Exception as e_dup:
         # Clave UNIQUE (medicamento_id, nombre): no repetir nombres por producto.
-        if e_dup.args and e_dup.args[0] == 1062:
+        if _es_duplicado(conexion, e_dup):
             return False, f"Ya existe una presentación llamada '{nombre}' para este medicamento."
         print(f"❌ Error de integridad al registrar presentación: {e_dup}")
         return False, "Error de integridad en la base de datos."
-    except Exception as e:
-        print(f"❌ Error al registrar presentación: {e}")
-        return False, f"Error al registrar la presentación: {e}"
     finally:
         conexion.close()
 
@@ -765,13 +910,21 @@ def registrar_medicamento_bd(nombre, categoria, componente, laboratorio, precio,
 
     cursor = conexion.cursor()
     try:
-        cursor.execute(
-            _adaptar_sql(conexion,
+        if _es_postgres(conexion):
+            cursor.execute(
                 "INSERT INTO medicamentos (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, ventas_totales, activo, fecha_vencimiento, unidades_por_blister, precio_blister) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s, %s, %s)"),
-            (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
-        )
-        nuevo_id = cursor.lastrowid
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s, %s, %s) RETURNING id",
+                (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
+            )
+            nuevo_id = cursor.fetchone()[0]
+        else:
+            cursor.execute(
+                _adaptar_sql(conexion,
+                    "INSERT INTO medicamentos (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, ventas_totales, activo, fecha_vencimiento, unidades_por_blister, precio_blister) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s, %s, %s)"),
+                (nombre, categoria, componente, laboratorio, precio, stock, requiere_receta, codigo_barras, fecha_vencimiento, unidades_por_blister, precio_blister)
+            )
+            nuevo_id = cursor.lastrowid
 
         if presentacion:
             p_nombre = (presentacion.get("nombre") or "").strip()
@@ -801,16 +954,12 @@ def registrar_medicamento_bd(nombre, categoria, componente, laboratorio, precio,
     except ValueError as e:
         conexion.rollback()
         return False, str(e)
-    except pymysql.err.IntegrityError as e_int:
+    except Exception as e_int:
         conexion.rollback()
-        if e_int.args and e_int.args[0] == 1062:
-            # Entrada duplicada: mensaje amigable (no filtra detalles de MySQL).
+        if _es_duplicado(conexion, e_int):
+            # Entrada duplicada: mensaje amigable (no filtra detalles del motor).
             return False, "Ya existe un medicamento con ese nombre o una presentación con ese nombre para él."
         print(f"❌ Error SQL al registrar medicamento: {e_int}")
-        return False, "Error de base de datos al registrar el medicamento."
-    except Exception as e:
-        conexion.rollback()
-        print(f"❌ Error al registrar medicamento: {type(e).__name__}: {e}")
         return False, "Error de base de datos al registrar el medicamento."
     finally:
         conexion.close()
@@ -832,7 +981,12 @@ def importar_medicamentos_csv_bd(rows):
     errores = []
 
     try:
-        conexion.begin()
+        # SQLite y PostgreSQL inician la transacción implícitamente con la
+        # primera sentencia de escritura; `begin()` solo aplica a MySQL.
+        if _es_sqlite(conexion) or _es_postgres(conexion):
+            pass
+        else:
+            conexion.begin()
         cursor = conexion.cursor()
         try:
             for i, row in enumerate(rows, start=1):
@@ -997,6 +1151,14 @@ def consultar_alertas_bd():
                 "AND fecha_vencimiento <= date('now', '+30 day') "
                 "ORDER BY fecha_vencimiento ASC"
             )
+        elif _es_postgres(conexion):
+            cursor.execute(
+                "SELECT id, nombre, stock, fecha_vencimiento, "
+                "(fecha_vencimiento - CURRENT_DATE) AS dias "
+                "FROM medicamentos WHERE activo = 1 AND fecha_vencimiento IS NOT NULL "
+                "AND fecha_vencimiento <= CURRENT_DATE + INTERVAL '30 days' "
+                "ORDER BY fecha_vencimiento ASC"
+            )
         else:
             cursor.execute(
                 "SELECT id, nombre, stock, fecha_vencimiento, DATEDIFF(fecha_vencimiento, CURDATE()) "
@@ -1066,6 +1228,14 @@ def reporte_ganancias_filtrado_bd(mes=None, anio=None):
                 params.append(int(anio))
             if mes:
                 condiciones.append("CAST(strftime('%m', fecha) AS INTEGER) = ?")
+                params.append(int(mes))
+        elif _es_postgres(conexion):
+            # PostgreSQL: EXTRACT para extraer mes/año de la fecha.
+            if anio:
+                condiciones.append("EXTRACT(YEAR FROM fecha) = %s")
+                params.append(int(anio))
+            if mes:
+                condiciones.append("EXTRACT(MONTH FROM fecha) = %s")
                 params.append(int(mes))
         else:
             # MySQL: YEAR()/MONTH() nativos.
@@ -1345,18 +1515,19 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
             # Dos cajas simultáneas pueden calcular el mismo MAX+1. Con el
             # índice UNIQUE (serie, correlativo), la venta perdedora recibe
             # un error de integridad (1062 en MySQL, UNIQUE constraint en
-            # SQLite) y REINTENTA con el siguiente número libre, sin abortar
-            # ni duplicar comprobantes.
+            # SQLite/PostgreSQL) y REINTENTA con el siguiente número libre,
+            # sin abortar ni duplicar comprobantes.
             #
-            # IMPORTANTE SQLite: un INSERT fallido por UNIQUE deja la
-            # transacción "abortada"; hay que hacer rollback antes de seguir.
+            # IMPORTANTE SQLite/PostgreSQL: un INSERT fallido por UNIQUE deja
+            # la transacción "abortada"; hay que hacer rollback antes de seguir.
             # Por eso, dentro de cada reintento se hace rollback (deshace el
             # cliente insertado) y se vuelve a ejecutar el upsert del cliente
             # junto con el nuevo correlativo, dentro de la misma transacción.
             intentos_correlativo = 0
+            comprobante_id = None
             while True:
                 try:
-                    # Inserta/actualiza el cliente (upsert compatible con ambos motores).
+                    # Inserta/actualiza el cliente (upsert compatible con los motores).
                     cliente_id = _upsert_cliente(conexion, cursor, tipo_doc, doc_cliente, nombre_cliente, direccion)
 
                     # Obtenemos el siguiente número correlativo para la serie.
@@ -1370,11 +1541,21 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                     # Insertamos el comprobante principal.
                     # _adaptar_parametros convierte Decimal a float para SQLite.
                     datos_venta = (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total_carrito, metodo_pago, monto_pagado, numero_operacion)
-                    cursor.execute(
-                        _adaptar_sql(conexion,
-                            "INSERT INTO comprobantes (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total, metodo_pago, monto_pagado, numero_operacion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"),
-                        _adaptar_parametros(conexion, datos_venta)
-                    )
+                    if _es_postgres(conexion):
+                        # PostgreSQL: cursor.lastrowid no es confiable; se usa
+                        # RETURNING id para obtener el id real insertado.
+                        cursor.execute(
+                            "INSERT INTO comprobantes (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total, metodo_pago, monto_pagado, numero_operacion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                            _adaptar_parametros(conexion, datos_venta)
+                        )
+                        comprobante_id = cursor.fetchone()[0]
+                    else:
+                        cursor.execute(
+                            _adaptar_sql(conexion,
+                                "INSERT INTO comprobantes (tipo_comprobante, serie, correlativo, cliente_id, subtotal, igv, total, metodo_pago, monto_pagado, numero_operacion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"),
+                            _adaptar_parametros(conexion, datos_venta)
+                        )
+                        comprobante_id = cursor.lastrowid
                     break
                 except Exception as e_dup:
                     es_duplicado = _es_duplicado(conexion, e_dup)
@@ -1382,17 +1563,15 @@ def registrar_venta_carrito_bd(tipo_comprobante, doc_cliente, nombre_cliente, ca
                         raise  # no es colisión de correlativo, o se agotaron los intentos
                     intentos_correlativo += 1
                     print(f"⚠️ Correlativo {serie}-{correlativo} en conflicto por venta simultánea; reintentando ({intentos_correlativo}/5)...")
-                    # SQLite: rollback para salir del estado "aborted" de la
-                    # transacción antes de reintentar. Esto deshace el INSERT
-                    # del cliente, que se volverá a hacer en el siguiente ciclo.
-                    if _es_sqlite(conexion):
+                    # SQLite/PostgreSQL: rollback para salir del estado "aborted"
+                    # de la transacción antes de reintentar. Esto deshace el
+                    # INSERT del cliente, que se volverá a hacer en el siguiente
+                    # ciclo. MySQL no requiere rollback: MAX+1 ya produce el
+                    # siguiente número libre sin perder el cliente.
+                    if _es_sqlite(conexion) or _es_postgres(conexion):
                         conexion.rollback()
                     else:
-                        # MySQL: sin rollback explícito aquí para no perder el
-                        # cliente; MAX+1 ya produce el siguiente libre.
                         pass
-            # Obtenemos el id del comprobante creado.
-            comprobante_id = cursor.lastrowid #guardamos el id del comprobante para relacionarlo con los detalles de la venta.
 
             # Recorremos cada item que está en el carrito en memoria.
             for item in carrito:
