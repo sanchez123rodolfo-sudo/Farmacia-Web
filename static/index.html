@@ -32,6 +32,23 @@
       box-sizing: border-box;
     }
 
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      max-width: 100%;
+    }
+
+    #cliente-documento {
+      min-width: 0;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -42,12 +59,16 @@
     }
 
     .page-wrapper {
+      width: 100%;
       max-width: 1180px;
       margin: 0 auto;
       padding: 36px 24px 40px;
     }
 
     .header {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
       background: var(--surface);
       border: 1px solid rgba(59, 130, 246, 0.14);
       border-radius: var(--radius);
@@ -64,6 +85,8 @@
       font-size: clamp(2.4rem, 2.8vw, 3.5rem);
       line-height: 1.02;
       color: #0f172a;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .header p {
@@ -96,12 +119,21 @@
     }
 
     .content-grid {
+      width: 100%;
+      max-width: 100%;
       display: grid;
-      grid-template-columns: minmax(280px, 1.3fr) minmax(320px, 0.9fr);
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
       gap: 32px;
     }
 
+    .content-grid > * {
+      min-width: 0;
+    }
+
     .panel {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -192,7 +224,8 @@
 
     .pago-info img {
       display: block;
-      max-width: 180px;
+      max-width: min(180px, 100%);
+      height: auto;
       margin: 4px auto 0;
       border-radius: 12px;
       box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
@@ -315,6 +348,9 @@
       top: calc(100% + 12px);
       left: 0;
       right: 0;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 18px;
@@ -330,6 +366,7 @@
       justify-content: space-between;
       gap: 14px;
       align-items: center;
+      min-width: 0;
       padding: 14px 20px;
       cursor: pointer;
       transition: background var(--transition), transform var(--transition);
@@ -347,6 +384,9 @@
       color: #0f172a;
       font-weight: 700;
       font-size: 0.98rem;
+      min-width: 0;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .pres-select {
@@ -510,6 +550,9 @@
       overflow-x: auto;
       overflow-y: auto;
       max-height: 460px;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
       border-radius: 24px;
       background: #f8fbff;
       border: 1px solid rgba(59, 130, 246, 0.14);
@@ -787,11 +830,30 @@
 
     @media (max-width: 680px) {
       .page-wrapper {
-        padding: 24px 16px 28px;
+        padding: 20px 14px 26px;
       }
 
       .content-grid {
-        gap: 22px;
+        gap: 20px;
+      }
+
+      .header {
+        padding: 26px 20px;
+      }
+
+      .header h1 {
+        font-size: clamp(1.35rem, 4.8vw, 2.4rem);
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+
+      .panel {
+        padding: 22px 18px;
+      }
+
+      .table-wrapper {
+        padding: 8px;
+        border-radius: 16px;
       }
 
       th,
@@ -802,6 +864,67 @@
       .totals-row {
         flex-direction: column;
         align-items: flex-start;
+        padding: 18px 20px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .page-wrapper {
+        padding: 16px 10px 22px;
+      }
+
+      .header {
+        padding: 22px 16px;
+      }
+
+      .header p {
+        font-size: 0.95rem;
+      }
+
+      .back-btn {
+        width: 100%;
+      }
+
+      .panel {
+        padding: 20px 14px;
+      }
+
+      .form-group input,
+      .form-group select,
+      #codigo-barras-input,
+      #buscador-medicamentos {
+        padding: 14px 14px;
+        font-size: 16px;
+      }
+
+      .modal {
+        padding: 14px;
+      }
+
+      .modal-content {
+        padding: 24px 18px;
+      }
+
+      .modal-actions {
+        flex-wrap: wrap;
+        justify-content: stretch;
+      }
+
+      .modal-actions .secondary-btn,
+      .modal-actions .primary-btn {
+        flex: 1 1 100%;
+      }
+
+      .search-result-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .search-result-meta {
+        white-space: normal;
+        text-align: left;
+        min-width: 0;
       }
     }
     /* Spinner dentro del botón */

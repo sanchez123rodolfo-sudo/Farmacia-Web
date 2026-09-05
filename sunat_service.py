@@ -82,7 +82,7 @@ import hashlib
 from datetime import datetime
 
 import requests
-from Practica_POO_Farmacia import conectar_bd
+from Practica_POO_Farmacia import conectar_bd, _adaptar_sql, _es_sqlite, _es_duplicado, _cursor_ctx
 
 # ──────────────────────────────────────────────
 # CONFIGURACIÓN
@@ -332,14 +332,18 @@ def registrar_rechazo_sunat(comprobante_id, tipo_comprobante, serie,
         print(f"[SUNAT] No se pudo guardar rechazo: sin conexion a BD")
         return False
 
+    # Fecha/hora actual compatible con el motor activo.
+    fecha_ahora = "datetime('now')" if _es_sqlite(conexion) else "NOW()"
+
     try:
-        with conexion.cursor() as cursor:
+        with _cursor_ctx(conexion) as cursor:
             # Verificar si ya existe un registro pendiente/rechazado para
             # este comprobante. Esto evita duplicados cuando se rechaza
             # multiples veces el mismo comprobante.
             cursor.execute(
-                "SELECT id, intentos FROM comprobantes_pendientes_sunat "
-                "WHERE comprobante_id = %s AND estado IN ('PENDIENTE', 'RECHAZADO')",
+                _adaptar_sql(conexion,
+                    "SELECT id, intentos FROM comprobantes_pendientes_sunat "
+                    "WHERE comprobante_id = %s AND estado IN ('PENDIENTE', 'RECHAZADO')"),
                 (comprobante_id,)
             )
             existente = cursor.fetchone()
@@ -350,10 +354,12 @@ def registrar_rechazo_sunat(comprobante_id, tipo_comprobante, serie,
                 # intentos y actualizamos el codigo/mensaje de error mas
                 # reciente de SUNAT.
                 cursor.execute(
-                    "UPDATE comprobantes_pendientes_sunat "
-                    "SET estado = 'RECHAZADO', codigo_respuesta = %s, mensaje_respuesta = %s, "
-                    "intentos = intentos + 1, payload_sunat = %s, fecha_ultimo_intento = NOW() "
-                    "WHERE id = %s",
+                    _adaptar_sql(conexion,
+                        "UPDATE comprobantes_pendientes_sunat "
+                        "SET estado = 'RECHAZADO', codigo_respuesta = %s, mensaje_respuesta = %s, "
+                        "intentos = intentos + 1, payload_sunat = %s, fecha_ultimo_intento = "
+                        + fecha_ahora + " "
+                        "WHERE id = %s"),
                     (str(codigo), mensaje, json.dumps(payload, default=str), existente[0])
                 )
                 print(f"[SUNAT] Rechazo actualizado para comprobante {comprobante_id} "
@@ -363,10 +369,11 @@ def registrar_rechazo_sunat(comprobante_id, tipo_comprobante, serie,
                 # Primera vez que este comprobante es rechazado. Creamos
                 # un registro nuevo con intentos=1 y max_intentos configurado.
                 cursor.execute(
-                    "INSERT INTO comprobantes_pendientes_sunat "
-                    "(comprobante_id, tipo_comprobante, serie, correlativo, estado, "
-                    "codigo_respuesta, mensaje_respuesta, payload_sunat, intentos, max_intentos) "
-                    "VALUES (%s, %s, %s, %s, 'RECHAZADO', %s, %s, %s, 1, %s)",
+                    _adaptar_sql(conexion,
+                        "INSERT INTO comprobantes_pendientes_sunat "
+                        "(comprobante_id, tipo_comprobante, serie, correlativo, estado, "
+                        "codigo_respuesta, mensaje_respuesta, payload_sunat, intentos, max_intentos) "
+                        "VALUES (%s, %s, %s, %s, 'RECHAZADO', %s, %s, %s, 1, %s)"),
                     (comprobante_id, tipo_comprobante, serie, correlativo,
                      str(codigo), mensaje, json.dumps(payload, default=str), MAX_INTENTOS)
                 )
@@ -419,25 +426,47 @@ def registrar_aceptacion_sunat(comprobante_id, hash_cdr, mensaje, payload):
     if not conexion:
         return False
 
+    # Fecha/hora actual compatible con el motor activo.
+    fecha_ahora = "datetime('now')" if _es_sqlite(conexion) else "NOW()"
+
     try:
-        with conexion.cursor() as cursor:
-            # INSERT con upsert: si el comprobante ya tenia un registro
-            # (por ejemplo, un rechazo previo), se actualiza su estado
-            # a ACEPTADO en lugar de crear un segundo registro.
+        with _cursor_ctx(conexion) as cursor:
+            # Verificar si ya existe un registro para este comprobante
+            # (por ejemplo, un rechazo previo).
             cursor.execute(
-                "INSERT INTO comprobantes_pendientes_sunat "
-                "(comprobante_id, tipo_comprobante, serie, correlativo, estado, "
-                "codigo_respuesta, mensaje_respuesta, hash_cdr, payload_sunat, intentos) "
-                "VALUES (%s, %s, %s, %s, 'ACEPTADO', '200', %s, %s, %s, 1) "
-                "ON DUPLICATE KEY UPDATE "
-                "estado = 'ACEPTADO', codigo_respuesta = '200', "
-                "mensaje_respuesta = %s, hash_cdr = %s, "
-                "payload_sunat = %s, fecha_ultimo_intento = NOW()",
-                (comprobante_id, payload.get("tipo_comprobante"), payload.get("serie"),
-                 payload.get("correlativo"), mensaje, hash_cdr,
-                 json.dumps(payload, default=str), mensaje, hash_cdr,
-                 json.dumps(payload, default=str))
+                _adaptar_sql(conexion,
+                    "SELECT id FROM comprobantes_pendientes_sunat WHERE comprobante_id = %s"),
+                (comprobante_id,)
             )
+            existente = cursor.fetchone()
+
+            payload_json = json.dumps(payload, default=str)
+            tipo_comp = payload.get("tipo_comprobante")
+            serie = payload.get("serie")
+            correlativo = payload.get("correlativo")
+
+            if existente:
+                # ── ACTUALIZAR registro existente a ACEPTADO ─────────────
+                cursor.execute(
+                    _adaptar_sql(conexion,
+                        "UPDATE comprobantes_pendientes_sunat "
+                        "SET estado = 'ACEPTADO', codigo_respuesta = '200', "
+                        "mensaje_respuesta = %s, hash_cdr = %s, payload_sunat = %s, "
+                        "fecha_ultimo_intento = " + fecha_ahora + " "
+                        "WHERE id = %s"),
+                    (mensaje, hash_cdr, payload_json, existente[0])
+                )
+            else:
+                # ── INSERTAR nuevo registro ACEPTADO ─────────────────────
+                cursor.execute(
+                    _adaptar_sql(conexion,
+                        "INSERT INTO comprobantes_pendientes_sunat "
+                        "(comprobante_id, tipo_comprobante, serie, correlativo, estado, "
+                        "codigo_respuesta, mensaje_respuesta, hash_cdr, payload_sunat, intentos) "
+                        "VALUES (%s, %s, %s, %s, 'ACEPTADO', '200', %s, %s, %s, 1)"),
+                    (comprobante_id, tipo_comp, serie, correlativo,
+                     mensaje, hash_cdr, payload_json)
+                )
         conexion.commit()
         print(f"[SUNAT] Aceptacion registrada para comprobante {comprobante_id}")
         return True
@@ -478,7 +507,7 @@ def listar_pendientes_sunat():
         return []
 
     try:
-        with conexion.cursor() as cursor:
+        with _cursor_ctx(conexion) as cursor:
             cursor.execute(
                 "SELECT cps.id, cps.comprobante_id, cps.tipo_comprobante, "
                 "cps.serie, cps.correlativo, cps.estado, cps.codigo_respuesta, "
@@ -544,18 +573,22 @@ def reenviar_comprobante_pendiente(pendiente_id):
     if not conexion:
         return {"aceptado": False, "error_red": True, "mensaje": "Sin conexion a BD"}
 
+    # Fecha/hora actual compatible con el motor activo.
+    fecha_ahora = "datetime('now')" if _es_sqlite(conexion) else "NOW()"
+
     try:
-        with conexion.cursor() as cursor:
+        with _cursor_ctx(conexion) as cursor:
             # Buscar el comprobante pendiente junto con datos de la venta
             # original. El JOIN con `comprobantes` permite obtener el
             # tipo de comprobante y cliente_id si fueran necesarios.
             cursor.execute(
-                "SELECT cps.comprobante_id, cps.tipo_comprobante, cps.serie, "
-                "cps.correlativo, cps.payload_sunat, cps.intentos, cps.max_intentos, "
-                "c.tipo_comprobante, c.cliente_id "
-                "FROM comprobantes_pendientes_sunat cps "
-                "JOIN comprobantes c ON c.id = cps.comprobante_id "
-                "WHERE cps.id = %s",
+                _adaptar_sql(conexion,
+                    "SELECT cps.comprobante_id, cps.tipo_comprobante, cps.serie, "
+                    "cps.correlativo, cps.payload_sunat, cps.intentos, cps.max_intentos, "
+                    "c.tipo_comprobante, c.cliente_id "
+                    "FROM comprobantes_pendientes_sunat cps "
+                    "JOIN comprobantes c ON c.id = cps.comprobante_id "
+                    "WHERE cps.id = %s"),
                 (pendiente_id,)
             )
             fila = cursor.fetchone()
@@ -583,9 +616,11 @@ def reenviar_comprobante_pendiente(pendiente_id):
             # Incrementar el contador de intentos y actualizar la fecha
             # del ultimo intento antes de reenviar.
             cursor.execute(
-                "UPDATE comprobantes_pendientes_sunat "
-                "SET intentos = intentos + 1, fecha_ultimo_intento = NOW() "
-                "WHERE id = %s",
+                _adaptar_sql(conexion,
+                    "UPDATE comprobantes_pendientes_sunat "
+                    "SET intentos = intentos + 1, fecha_ultimo_intento = "
+                    + fecha_ahora + " "
+                    "WHERE id = %s"),
                 (pendiente_id,)
             )
         conexion.commit()
